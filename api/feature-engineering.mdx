@@ -1,0 +1,621 @@
+---
+title: 'Feature Engineering API'
+description: 'Transform raw F1 race data into ML-ready features'
+---
+
+## Overview
+
+The Feature Engineering module transforms raw Formula 1 race data into machine learning features. It provides two versions: a base implementation with core historical features and an enhanced version (V2) with weather, tire strategy, and circuit-specific features.
+
+**Source Files**:
+- `feature_engineering.py` - Base feature engineering
+- `feature_engineering_v2.py` - Enhanced feature engineering with advanced metrics
+
+## Feature Engineering Pipeline
+
+### Data Loading
+
+Both versions load race data from CSV files:
+
+<CodeGroup>
+
+```python Base Version
+import pandas as pd
+
+# Load race results
+race_results = pd.read_csv('./data/raw/race_results.csv')
+lap_times = pd.read_csv('./data/raw/lap_times.csv')
+pit_stops = pd.read_csv('./data/raw/pit_stops.csv')
+weather = pd.read_csv('./data/raw/weather.csv')
+```
+
+```python Enhanced V2
+import pandas as pd
+
+# Load race results (simplified data loading)
+race_results = pd.read_csv('./data/raw/race_results.csv')
+# V2 generates weather and tire data algorithmically
+```
+
+</CodeGroup>
+
+## Core Feature Types
+
+### Base Features
+
+All feature sets include these fundamental race attributes:
+
+<ResponseField name="Year" type="int">
+  Season year of the race
+</ResponseField>
+
+<ResponseField name="Round" type="int">
+  Race round number in the season
+</ResponseField>
+
+<ResponseField name="EventName" type="str">
+  Grand Prix name (e.g., "Monaco Grand Prix")
+</ResponseField>
+
+<ResponseField name="DriverCode" type="str">
+  Three-letter driver abbreviation
+</ResponseField>
+
+<ResponseField name="TeamName" type="str">
+  Constructor/team name
+</ResponseField>
+
+<ResponseField name="GridPosition" type="float">
+  Starting position on grid (default: 10.0 if missing)
+</ResponseField>
+
+<ResponseField name="Position" type="float">
+  Final race finishing position (target variable)
+</ResponseField>
+
+<ResponseField name="Points" type="float">
+  Championship points earned (default: 0.0)
+</ResponseField>
+
+## Historical Features
+
+### Driver Historical Performance
+
+Features calculated from driver's past race results:
+
+<ResponseField name="Driver_AvgPosition" type="float">
+  Average finishing position across all previous races
+  
+  **Calculation**: `mean(historical['Position'])`
+  
+  **Default**: 10.0 if no history
+</ResponseField>
+
+<ResponseField name="Driver_AvgPoints" type="float">
+  Average points per race from previous performances
+  
+  **Calculation**: `mean(historical['Points'])`
+  
+  **Default**: 0.0 if no history
+</ResponseField>
+
+<ResponseField name="Driver_TotalWins" type="int">
+  Total number of race wins before current race
+  
+  **Calculation**: `sum(historical['Position'] == 1)`
+</ResponseField>
+
+<ResponseField name="Driver_TotalPodiums" type="int">
+  Total podium finishes (positions 1-3) before current race
+  
+  **Calculation**: `sum(historical['Position'] <= 3)`
+</ResponseField>
+
+### Historical Data Window
+
+Features are calculated using only data **before** the target race:
+
+```python
+# Get historical data BEFORE this race
+historical = driver_data[
+    (driver_data['Year'] < race['Year']) |
+    ((driver_data['Year'] == race['Year']) & (driver_data['Round'] < race['Round']))
+]
+```
+
+<Note>
+This prevents data leakage by ensuring the model only uses information that would have been available at race time.
+</Note>
+
+### Team Performance Features
+
+<ResponseField name="Team_AvgPosition" type="float">
+  Average team finishing position (simplified to 10.0 in base version)
+</ResponseField>
+
+<ResponseField name="Team_TotalWins" type="int">
+  Total team victories (simplified to 0 in base version)
+</ResponseField>
+
+<ResponseField name="Team_AvgPoints" type="float">
+  Average team points per race (simplified to 0.0 in base version)
+</ResponseField>
+
+## Enhanced Features (V2)
+
+### Weather Impact Features
+
+V2 adds comprehensive weather modeling:
+
+<ResponseField name="Weather" type="str">
+  Weather condition: 'DRY', 'LIGHT_RAIN', 'HEAVY_RAIN'
+  
+  **Distribution**: 80% dry, 15% light rain, 5% heavy rain
+</ResponseField>
+
+<ResponseField name="Weather_Impact" type="float">
+  Lap time multiplier based on conditions
+  
+  **Values**:
+  - DRY: 1.0 (baseline)
+  - LIGHT_RAIN: 1.05 (+5% lap time)
+  - HEAVY_RAIN: 1.15 (+15% lap time)
+</ResponseField>
+
+<ResponseField name="Is_Wet_Race" type="int">
+  Binary flag: 1 if rain present, 0 if dry
+</ResponseField>
+
+**Weather Impact Constants**:
+```python
+WEATHER_IMPACT = {
+    'DRY': 1.0,
+    'LIGHT_RAIN': 1.05,
+    'HEAVY_RAIN': 1.15
+}
+```
+
+### Tire Strategy Features
+
+Advanced tire compound and degradation modeling:
+
+<ResponseField name="Starting_Tire" type="str">
+  Starting tire compound: 'SOFT', 'MEDIUM', 'HARD'
+  
+  **Distribution**: 50% soft, 40% medium, 10% hard
+</ResponseField>
+
+<ResponseField name="Tire_Degradation_Rate" type="float">
+  Tire performance loss per lap (in seconds)
+  
+  **Values**:
+  - SOFT: 0.08 seconds/lap
+  - MEDIUM: 0.05 seconds/lap
+  - HARD: 0.03 seconds/lap
+</ResponseField>
+
+<ResponseField name="Optimal_Pit_Lap" type="int">
+  Calculated optimal lap for pit stop
+  
+  **Formula**: `int(20 / degradation_rate)`
+  
+  **Example**: Soft tires → lap 250 (20/0.08)
+</ResponseField>
+
+<ResponseField name="Tire_Advantage" type="float">
+  Initial tire performance advantage
+  
+  **Values**:
+  - SOFT: 1.0 (fastest)
+  - MEDIUM: 0.8
+  - HARD: 0.6 (slowest)
+</ResponseField>
+
+**Tire Degradation Constants**:
+```python
+TIRE_DEGRADATION = {
+    'SOFT': 0.08,
+    'MEDIUM': 0.05,
+    'HARD': 0.03
+}
+```
+
+### Circuit-Specific Features
+
+Track type and familiarity metrics:
+
+<ResponseField name="Circuit_Type" type="str">
+  Circuit classification
+  
+  **Categories**:
+  - STREET: Monaco, Singapore, Baku, Melbourne
+  - DESERT: Bahrain, Abu Dhabi, Saudi Arabia
+  - FAST: Silverstone, Monza, Spa
+  - TECHNICAL: Catalunya, Hungaroring
+  - STANDARD: All others
+</ResponseField>
+
+<ResponseField name="Circuit_Familiarity" type="int">
+  Number of times driver has raced at this circuit
+  
+  **Calculation**: Count of previous races at same circuit
+</ResponseField>
+
+<ResponseField name="Circuit_AvgPosition" type="float">
+  Driver's average position at this specific circuit
+  
+  **Fallback**: Overall average if no circuit history
+</ResponseField>
+
+<ResponseField name="Is_Street_Circuit" type="int">
+  Binary flag: 1 if street circuit, 0 otherwise
+</ResponseField>
+
+<ResponseField name="Is_High_Speed" type="int">
+  Binary flag: 1 if high-speed circuit, 0 otherwise
+</ResponseField>
+
+**Circuit Type Mapping**:
+```python
+CIRCUIT_TYPES = {
+    'Monaco': 'STREET',
+    'Singapore': 'STREET',
+    'Silverstone': 'FAST',
+    'Monza': 'FAST',
+    'Catalunya': 'TECHNICAL',
+    # ... more circuits
+}
+```
+
+## Feature Engineering Functions
+
+### create_driver_features()
+
+Generates historical performance features for each driver:
+
+```python
+def create_driver_features(driver_data, race):
+    """Create driver-specific features from historical data"""
+    historical = driver_data[
+        (driver_data['Year'] < race['Year']) |
+        ((driver_data['Year'] == race['Year']) & 
+         (driver_data['Round'] < race['Round']))
+    ]
+    
+    return {
+        'Driver_AvgPosition': float(historical['Position'].mean()),
+        'Driver_AvgPoints': float(historical['Points'].mean()),
+        'Driver_TotalWins': int((historical['Position'] == 1).sum()),
+        'Driver_TotalPodiums': int((historical['Position'] <= 3).sum())
+    }
+```
+
+<ParamField path="driver_data" type="DataFrame" required>
+  Filtered DataFrame containing all races for a specific driver
+</ParamField>
+
+<ParamField path="race" type="Series" required>
+  Single race record for which to generate features
+</ParamField>
+
+**Returns**: Dictionary of driver historical features
+
+### create_circuit_features() (V2)
+
+Generates circuit-specific performance metrics:
+
+```python
+def create_circuit_features(historical, race, circuit_types):
+    """Create circuit-specific features"""
+    circuit_name = race['EventName'].split(' ')[0]
+    circuit_type = circuit_types.get(circuit_name, 'STANDARD')
+    
+    circuit_races = historical[historical['EventName'] == race['EventName']]
+    circuit_avg_pos = (
+        circuit_races['Position'].mean() 
+        if len(circuit_races) > 0 
+        else historical['Position'].mean()
+    )
+    
+    return {
+        'Circuit_Type': circuit_type,
+        'Circuit_Familiarity': len(circuit_races),
+        'Circuit_AvgPosition': circuit_avg_pos,
+        'Is_Street_Circuit': 1 if circuit_type == 'STREET' else 0,
+        'Is_High_Speed': 1 if circuit_type == 'FAST' else 0
+    }
+```
+
+<ParamField path="historical" type="DataFrame" required>
+  Driver's historical race data
+</ParamField>
+
+<ParamField path="race" type="Series" required>
+  Current race record
+</ParamField>
+
+<ParamField path="circuit_types" type="dict" required>
+  Mapping of circuit names to types
+</ParamField>
+
+**Returns**: Dictionary of circuit-related features
+
+## Data Processing
+
+### Missing Value Handling
+
+Both versions implement robust missing value handling:
+
+```python
+# Handle missing grid positions
+'GridPosition': float(race['GridPosition']) if pd.notna(race['GridPosition']) else 10.0
+
+# Handle missing points
+'Points': float(race['Points']) if pd.notna(race['Points']) else 0.0
+
+# Fill any remaining missing numeric values
+for col in features_df.columns:
+    if features_df[col].dtype in ['float64', 'int64']:
+        features_df[col] = features_df[col].fillna(0)
+```
+
+<Note>
+Missing grid positions default to 10.0 (mid-grid) to avoid biasing the model with extreme values.
+</Note>
+
+### Data Validation
+
+Ensures target variable integrity:
+
+```python
+# Remove rows where Position is missing
+features_df = features_df[features_df['Position'].notna()]
+
+print(f"Position not null: {features_df['Position'].notna().sum()}")
+print(f"Position null: {features_df['Position'].isna().sum()}")
+```
+
+### Categorical Encoding (V2)
+
+V2 one-hot encodes categorical variables:
+
+```python
+# One-hot encode Weather
+weather_dummies = pd.get_dummies(features_df['Weather'], prefix='Weather')
+features_df = pd.concat([features_df, weather_dummies], axis=1)
+
+# One-hot encode Starting Tire
+tire_dummies = pd.get_dummies(features_df['Starting_Tire'], prefix='Tire')
+features_df = pd.concat([features_df, tire_dummies], axis=1)
+
+# One-hot encode Circuit Type
+circuit_dummies = pd.get_dummies(features_df['Circuit_Type'], prefix='Circuit')
+features_df = pd.concat([features_df, circuit_dummies], axis=1)
+
+# Drop original categorical columns
+features_df = features_df.drop(['Weather', 'Starting_Tire', 'Circuit_Type'], axis=1)
+```
+
+**Resulting Columns**:
+- `Weather_DRY`, `Weather_LIGHT_RAIN`, `Weather_HEAVY_RAIN`
+- `Tire_SOFT`, `Tire_MEDIUM`, `Tire_HARD`
+- `Circuit_STREET`, `Circuit_DESERT`, `Circuit_FAST`, `Circuit_TECHNICAL`, `Circuit_STANDARD`
+
+## Output Format
+
+### race_features.csv (Base)
+
+```csv
+Year,Round,EventName,DriverCode,TeamName,GridPosition,Position,Points,Driver_AvgPosition,Driver_AvgPoints,Driver_TotalWins,Driver_TotalPodiums,Team_AvgPosition,Team_TotalWins,Team_AvgPoints
+2024,2,Saudi Arabian Grand Prix,VER,Red Bull Racing,1.0,1.0,25.0,1.5,24.5,15,18,10.0,0,0.0
+```
+
+**File Location**: `./data/processed/race_features.csv`
+
+### race_features_v2.csv (Enhanced)
+
+```csv
+Year,Round,EventName,DriverCode,TeamName,GridPosition,Position,Points,Driver_AvgPosition,Driver_AvgPoints,Driver_TotalWins,Driver_TotalPodiums,Weather_Impact,Is_Wet_Race,Tire_Degradation_Rate,Optimal_Pit_Lap,Tire_Advantage,Circuit_Familiarity,Circuit_AvgPosition,Is_Street_Circuit,Is_High_Speed,Team_AvgPosition,Team_TotalWins,Team_AvgPoints,Weather_DRY,Weather_LIGHT_RAIN,Weather_HEAVY_RAIN,Tire_SOFT,Tire_MEDIUM,Tire_HARD,Circuit_STREET,Circuit_DESERT,Circuit_FAST,Circuit_TECHNICAL,Circuit_STANDARD
+2024,2,Saudi Arabian Grand Prix,VER,Red Bull Racing,1.0,1.0,25.0,1.5,24.5,15,18,1.0,0,0.08,250,1.0,2,1.0,0,0,10.0,0,0.0,1,0,0,1,0,0,0,1,0,0,0
+```
+
+**File Location**: `./data/processed/race_features_v2.csv`
+
+<Note>
+V2 output includes significantly more columns due to one-hot encoding of categorical variables.
+</Note>
+
+## Usage Examples
+
+<CodeGroup>
+
+```python Base Feature Engineering
+import pandas as pd
+import numpy as np
+
+# Load data
+race_results = pd.read_csv('./data/raw/race_results.csv')
+
+features_list = []
+
+# Process each driver
+for driver in race_results['DriverCode'].unique():
+    driver_data = race_results[race_results['DriverCode'] == driver]
+    driver_data = driver_data.sort_values(['Year', 'Round'])
+    
+    for idx, race in driver_data.iterrows():
+        # Get historical data
+        historical = driver_data[
+            (driver_data['Year'] < race['Year']) |
+            ((driver_data['Year'] == race['Year']) & 
+             (driver_data['Round'] < race['Round']))
+        ]
+        
+        if len(historical) == 0:
+            continue
+        
+        # Create features
+        features = {
+            'Year': race['Year'],
+            'DriverCode': driver,
+            'GridPosition': float(race['GridPosition']) if pd.notna(race['GridPosition']) else 10.0,
+            'Position': float(race['Position']),
+            'Driver_AvgPosition': float(historical['Position'].mean()),
+            'Driver_TotalWins': int((historical['Position'] == 1).sum())
+        }
+        
+        features_list.append(features)
+
+# Create DataFrame and save
+df = pd.DataFrame(features_list)
+df.to_csv('./data/processed/race_features.csv', index=False)
+```
+
+```python Enhanced V2 with Weather
+import pandas as pd
+import numpy as np
+
+# Weather impact constants
+WEATHER_IMPACT = {
+    'DRY': 1.0,
+    'LIGHT_RAIN': 1.05,
+    'HEAVY_RAIN': 1.15
+}
+
+# Simulate weather
+weather = np.random.choice(
+    ['DRY', 'LIGHT_RAIN', 'HEAVY_RAIN'], 
+    p=[0.8, 0.15, 0.05]
+)
+
+# Add weather features
+features = {
+    'Weather': weather,
+    'Weather_Impact': WEATHER_IMPACT[weather],
+    'Is_Wet_Race': 1 if weather != 'DRY' else 0
+}
+```
+
+```python V2 with Tire Strategy
+import pandas as pd
+import numpy as np
+
+# Tire degradation rates
+TIRE_DEGRADATION = {
+    'SOFT': 0.08,
+    'MEDIUM': 0.05,
+    'HARD': 0.03
+}
+
+# Simulate tire choice
+start_tire = np.random.choice(
+    ['SOFT', 'MEDIUM', 'HARD'],
+    p=[0.5, 0.4, 0.1]
+)
+
+# Calculate tire features
+degradation = TIRE_DEGRADATION[start_tire]
+optimal_pit = int(20 / degradation)
+
+features = {
+    'Starting_Tire': start_tire,
+    'Tire_Degradation_Rate': degradation,
+    'Optimal_Pit_Lap': optimal_pit,
+    'Tire_Advantage': 1.0 if start_tire == 'SOFT' else 0.8 if start_tire == 'MEDIUM' else 0.6
+}
+```
+
+```python V2 with Circuit Analysis
+import pandas as pd
+
+CIRCUIT_TYPES = {
+    'Monaco': 'STREET',
+    'Silverstone': 'FAST',
+    'Catalunya': 'TECHNICAL'
+}
+
+# Determine circuit type
+circuit_name = race['EventName'].split(' ')[0]
+circuit_type = CIRCUIT_TYPES.get(circuit_name, 'STANDARD')
+
+# Calculate circuit-specific performance
+circuit_races = historical[historical['EventName'] == race['EventName']]
+circuit_avg = (
+    circuit_races['Position'].mean() 
+    if len(circuit_races) > 0 
+    else historical['Position'].mean()
+)
+
+features = {
+    'Circuit_Type': circuit_type,
+    'Circuit_Familiarity': len(circuit_races),
+    'Circuit_AvgPosition': circuit_avg,
+    'Is_Street_Circuit': 1 if circuit_type == 'STREET' else 0
+}
+```
+
+</CodeGroup>
+
+## Feature Statistics
+
+### Base Version Output
+
+```
+✓ Created 420 records
+Position not null: 420
+Position null: 0
+Final records: 420
+
+💾 Saved: data/processed/race_features.csv
+   Records: 420
+   Columns: 15
+```
+
+### Enhanced V2 Output
+
+```
+✓ Created 420 records
+New features added:
+   • Weather: 3 conditions
+   • Tire types: 3 compounds
+   • Circuit types: 5 categories
+
+✓ Encoded variables
+   Total features now: 34
+
+💾 Saved: data/processed/race_features_v2.csv
+   Records: 420
+   Features: 34
+```
+
+## Performance Considerations
+
+<Note>
+**Processing Time**: Base version processes ~420 records in seconds. V2 takes slightly longer due to additional calculations.
+</Note>
+
+<Note>
+**Memory Usage**: V2 uses more memory due to one-hot encoding. Expect ~3x column count compared to base version.
+</Note>
+
+<Note>
+**Data Quality**: Always validate that Position column has no null values before training. Invalid records are automatically filtered.
+</Note>
+
+## Next Steps
+
+After feature engineering, the data is ready for model training:
+
+```bash
+# Base features
+python train_model.py
+
+# Enhanced V2 features
+python train_model_v2.py
+```
+
+**Enhanced V2 Capabilities**:
+- Weather impact analysis
+- Tire strategy optimization
+- Circuit-specific predictions
+- More robust feature set for complex modeling

@@ -1,0 +1,332 @@
+---
+title: 'Training ML Models'
+description: 'Learn how to train race winner prediction models with Random Forest and XGBoost'
+icon: 'brain'
+---
+
+## Overview
+
+The F1 ML Prediction System uses machine learning models to predict race winners based on historical data, driver performance, and team statistics. This guide covers the complete training pipeline from data preparation to model evaluation.
+
+## Training Pipeline
+
+<Steps>
+  <Step title="Feature Engineering">
+    First, prepare your data by running the feature engineering script:
+
+    ```bash
+    python data/feature_engineering.py
+    ```
+
+    This processes raw race data and creates engineered features.
+  </Step>
+
+  <Step title="Train Models">
+    Run the complete training pipeline:
+
+    ```bash
+    python train_all_models.py
+    ```
+
+    Or train individual models using the `WinnerPredictor` class.
+  </Step>
+
+  <Step title="Evaluate Results">
+    Review the generated visualizations in `./models/` including confusion matrices and feature importance plots.
+  </Step>
+</Steps>
+
+## Master Training Script
+
+The `train_all_models.py` script orchestrates the entire training workflow:
+
+```python train_all_models.py
+from data.feature_engineering import F1FeatureEngineer
+from models.winner_predictor import WinnerPredictor
+
+def main():
+    # STEP 1: Feature Engineering
+    engineer = F1FeatureEngineer(data_dir='./data/raw')
+    features = engineer.save_features(output_dir='./data/processed')
+    
+    # STEP 2: Winner Prediction Model
+    predictor = WinnerPredictor()
+    predictor.load_data('./data/processed/race_features.csv')
+    predictor.prepare_features()
+    predictor.create_target(top_k=3)
+    predictor.split_data(test_size=0.2)
+    
+    # Train both models
+    predictor.train_random_forest(n_estimators=100)
+    predictor.train_xgboost()
+    
+    # Evaluate and save
+    predictor.evaluate()
+    predictor.feature_importance()
+    predictor.save_models()
+```
+
+## Data Preparation
+
+### Loading and Cleaning Data
+
+The system loads race results and creates features from historical performance:
+
+```python feature_engineering.py
+import pandas as pd
+import numpy as np
+
+# Load raw data
+race_results = pd.read_csv('./data/raw/race_results.csv')
+lap_times = pd.read_csv('./data/raw/lap_times.csv')
+pit_stops = pd.read_csv('./data/raw/pit_stops.csv')
+weather = pd.read_csv('./data/raw/weather.csv')
+
+# Create features for each driver
+for driver in race_results['DriverCode'].unique():
+    driver_data = race_results[race_results['DriverCode'] == driver]
+    driver_data = driver_data.sort_values(['Year', 'Round'])
+    
+    for idx, race in driver_data.iterrows():
+        # Get historical data BEFORE this race
+        historical = driver_data[
+            (driver_data['Year'] < race['Year']) |
+            ((driver_data['Year'] == race['Year']) & 
+             (driver_data['Round'] < race['Round']))
+        ]
+        
+        features = {
+            'GridPosition': float(race['GridPosition']),
+            'Driver_AvgPosition': float(historical['Position'].mean()),
+            'Driver_AvgPoints': float(historical['Points'].mean()),
+            'Driver_TotalWins': int((historical['Position'] == 1).sum()),
+            'Driver_TotalPodiums': int((historical['Position'] <= 3).sum())
+        }
+```
+
+### Available Features
+
+The system generates comprehensive features including:
+
+- **Grid Data**: `GridPosition`, `Driver_AvgGridPosition`
+- **Driver Performance**: `Driver_AvgPosition`, `Driver_AvgPoints`, `Driver_TotalWins`, `Driver_TotalPodiums`
+- **Recent Form**: `Driver_Last5_AvgPosition`, `Driver_Last5_AvgPoints`
+- **Circuit Experience**: `Driver_CircuitExperience`, `Driver_CircuitAvgPosition`
+- **Team Stats**: `Team_AvgPosition`, `Team_TotalWins`, `Team_AvgPoints`
+- **Weather**: `AvgAirTemp`, `AvgTrackTemp`, `AvgHumidity`, `IsRaining`
+
+## Model Training
+
+### Random Forest Classifier
+
+Train a Random Forest model with optimized hyperparameters:
+
+```python winner_predictor.py
+def train_random_forest(self, n_estimators=100):
+    """Train Random Forest model"""
+    print("🌲 Training Random Forest...")
+    
+    self.rf_model = RandomForestClassifier(
+        n_estimators=n_estimators,
+        max_depth=10,
+        min_samples_split=10,
+        min_samples_leaf=5,
+        random_state=42,
+        n_jobs=-1
+    )
+    
+    self.rf_model.fit(self.X_train, self.y_train)
+    
+    # Evaluate
+    train_score = self.rf_model.score(self.X_train, self.y_train)
+    test_score = self.rf_model.score(self.X_test, self.y_test)
+    
+    print(f"   Training accuracy: {train_score:.3f}")
+    print(f"   Test accuracy: {test_score:.3f}")
+    
+    return self.rf_model
+```
+
+### XGBoost Classifier
+
+Train an XGBoost model for ensemble predictions:
+
+```python winner_predictor.py
+def train_xgboost(self):
+    """Train XGBoost model"""
+    print("🚀 Training XGBoost...")
+    
+    self.xgb_model = XGBClassifier(
+        n_estimators=100,
+        max_depth=6,
+        learning_rate=0.1,
+        random_state=42,
+        use_label_encoder=False,
+        eval_metric='logloss'
+    )
+    
+    self.xgb_model.fit(self.X_train, self.y_train)
+    
+    # Evaluate
+    train_score = self.xgb_model.score(self.X_train, self.y_train)
+    test_score = self.xgb_model.score(self.X_test, self.y_test)
+    
+    print(f"   Training accuracy: {train_score:.3f}")
+    print(f"   Test accuracy: {test_score:.3f}")
+    
+    return self.xgb_model
+```
+
+<Note>
+  The system uses **time-based splitting** where older races are used for training and recent races for testing. This prevents data leakage and better simulates real-world prediction scenarios.
+</Note>
+
+## Model Evaluation
+
+### Performance Metrics
+
+Evaluate model performance with comprehensive metrics:
+
+```python winner_predictor.py
+def evaluate(self):
+    """Comprehensive model evaluation"""
+    print("📊 Model Evaluation:")
+    
+    # Predictions
+    rf_pred = self.rf_model.predict(self.X_test)
+    xgb_pred = self.xgb_model.predict(self.X_test)
+    
+    print("\n🌲 RANDOM FOREST:")
+    print(classification_report(self.y_test, rf_pred, 
+                               target_names=['Not Top-3', 'Top-3']))
+    
+    print("\n🚀 XGBOOST:")
+    print(classification_report(self.y_test, xgb_pred,
+                               target_names=['Not Top-3', 'Top-3']))
+```
+
+**Example Output:**
+
+```
+📊 Model Evaluation:
+
+🌲 RANDOM FOREST:
+              precision    recall  f1-score   support
+
+   Not Top-3       0.88      0.92      0.90       450
+       Top-3       0.84      0.78      0.81       250
+
+    accuracy                           0.87       700
+
+🚀 XGBOOST:
+              precision    recall  f1-score   support
+
+   Not Top-3       0.89      0.93      0.91       450
+       Top-3       0.86      0.79      0.82       250
+
+    accuracy                           0.88       700
+```
+
+### Feature Importance Analysis
+
+Identify the most influential features:
+
+```python winner_predictor.py
+def feature_importance(self):
+    """Plot feature importance"""
+    print("📈 Feature Importance:")
+    
+    # Get importances
+    rf_importance = pd.DataFrame({
+        'feature': self.feature_columns,
+        'importance': self.rf_model.feature_importances_
+    }).sort_values('importance', ascending=False).head(10)
+    
+    # Print top features
+    print("\n🔝 Top 5 Features (Random Forest):")
+    for idx, row in rf_importance.head(5).iterrows():
+        print(f"   {row['feature']:30s}: {row['importance']:.4f}")
+```
+
+**Example Output:**
+
+```
+🔝 Top 5 Features (Random Forest):
+   GridPosition                  : 0.2845
+   Driver_AvgPosition            : 0.1823
+   Team_AvgPoints                : 0.1456
+   Driver_Last5_AvgPosition      : 0.1102
+   Driver_CircuitAvgPosition     : 0.0891
+```
+
+## Saving Models
+
+Save trained models for deployment:
+
+```python winner_predictor.py
+def save_models(self, output_dir='./models/saved_models'):
+    """Save trained models"""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    print("💾 Saving models...")
+    
+    joblib.dump(self.rf_model, f'{output_dir}/winner_predictor_rf.pkl')
+    joblib.dump(self.xgb_model, f'{output_dir}/winner_predictor_xgb.pkl')
+    joblib.dump(self.feature_columns, f'{output_dir}/feature_columns.pkl')
+    
+    print("   ✓ Models saved successfully")
+```
+
+Models are saved to:
+- `./models/saved_models/winner_predictor_rf.pkl` - Random Forest model
+- `./models/saved_models/winner_predictor_xgb.pkl` - XGBoost model
+- `./models/saved_models/feature_columns.pkl` - Feature column names
+
+## Complete Training Example
+
+Here's a complete example using the `WinnerPredictor` class:
+
+```python
+from models.winner_predictor import WinnerPredictor
+
+# Initialize predictor
+predictor = WinnerPredictor()
+
+# Load data
+predictor.load_data('./data/processed/race_features.csv')
+
+# Prepare features
+predictor.prepare_features()
+
+# Create target (Top 3 prediction)
+predictor.create_target(top_k=3)
+
+# Split data (80% train, 20% test)
+predictor.split_data(test_size=0.2)
+
+# Train models
+predictor.train_random_forest(n_estimators=100)
+predictor.train_xgboost()
+
+# Evaluate
+predictor.evaluate()
+predictor.feature_importance()
+
+# Save models
+predictor.save_models()
+```
+
+<Warning>
+  Always ensure your data has sufficient historical records before training. The system requires at least 100+ race records for reliable model performance.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Making Predictions" icon="crystal-ball" href="/guides/making-predictions">
+    Learn how to use trained models for race predictions
+  </Card>
+  <Card title="Web Dashboard" icon="chart-line" href="/guides/web-dashboard">
+    Deploy models with the interactive dashboard
+  </Card>
+</CardGroup>

@@ -1,0 +1,537 @@
+---
+title: 'Response Formats'
+description: 'JSON response structures, error handling, and HTTP status codes'
+---
+
+## Response Structure
+
+All API endpoints return JSON responses with appropriate HTTP status codes. Successful responses return `200 OK` with the requested data, while errors return appropriate error codes with error details.
+
+---
+
+## Success Responses
+
+### Standard Success Format
+
+Most endpoints return a JSON object with response-specific fields:
+
+```json
+{
+  "field1": "value1",
+  "field2": "value2",
+  "nested_object": {
+    "key": "value"
+  },
+  "array_field": [1, 2, 3]
+}
+```
+
+<Tabs>
+  <Tab title="Prediction Response">
+    ```json
+    {
+      "probability": 0.8247,
+      "prediction": "Top-3 Likely",
+      "insights": "P1 in dry on soft tires = Excellent podium chances!"
+    }
+    ```
+    
+    <ResponseField name="probability" type="float" required>
+      Decimal value between 0.0 and 1.0 representing podium finish probability
+    </ResponseField>
+    
+    <ResponseField name="prediction" type="string" required>
+      Human-readable prediction outcome ("Top-3 Likely" or "Top-3 Unlikely")
+    </ResponseField>
+    
+    <ResponseField name="insights" type="string" required>
+      Contextual analysis of the prediction based on input parameters
+    </ResponseField>
+  </Tab>
+  
+  <Tab title="Feature Importance">
+    ```json
+    {
+      "features": [
+        "GridPosition",
+        "Driver_TotalWins",
+        "Weather_Impact"
+      ],
+      "importance": [0.2845, 0.1632, 0.1289]
+    }
+    ```
+    
+    <ResponseField name="features" type="array<string>" required>
+      Feature names sorted by importance (descending order)
+    </ResponseField>
+    
+    <ResponseField name="importance" type="array<float>" required>
+      Importance scores (0.0 to 1.0) corresponding to each feature
+    </ResponseField>
+  </Tab>
+  
+  <Tab title="Driver Comparison">
+    ```json
+    {
+      "driver1_name": "Max Verstappen",
+      "driver2_name": "Lewis Hamilton",
+      "driver1_team": "Red Bull Racing",
+      "driver2_team": "Ferrari",
+      "categories": ["Wins", "Podiums", "Poles"],
+      "driver1_stats": [61, 107, 40],
+      "driver2_stats": [103, 197, 104],
+      "better_driver": "Lewis Hamilton"
+    }
+    ```
+    
+    <ResponseField name="driver1_name" type="string" required>
+      Full name of first driver
+    </ResponseField>
+    
+    <ResponseField name="driver2_name" type="string" required>
+      Full name of second driver
+    </ResponseField>
+    
+    <ResponseField name="categories" type="array<string>" required>
+      Statistic category names for comparison
+    </ResponseField>
+    
+    <ResponseField name="driver1_stats" type="array<integer>" required>
+      Numeric statistics for first driver
+    </ResponseField>
+    
+    <ResponseField name="driver2_stats" type="array<integer>" required>
+      Numeric statistics for second driver
+    </ResponseField>
+  </Tab>
+  
+  <Tab title="Race Simulation">
+    ```json
+    {
+      "winner": "Max Verstappen",
+      "dnf_count": 2,
+      "sc_deployments": [12, 38],
+      "weather_history": [[1, "DRY"], [25, "LIGHT_RAIN"]],
+      "fastest_lap": {
+        "driver": "Charles Leclerc",
+        "time": 78.452
+      },
+      "results": [
+        {
+          "position": 1,
+          "name": "Max Verstappen",
+          "team": "Red Bull Racing",
+          "gap": 0.0,
+          "dnf": false,
+          "tires_used": ["SOFT", "MEDIUM"],
+          "pit_laps": [18],
+          "laps_led": 45
+        }
+      ]
+    }
+    ```
+    
+    <ResponseField name="winner" type="string" required>
+      Name of the race winner
+    </ResponseField>
+    
+    <ResponseField name="results" type="array<object>" required>
+      Detailed results for all 20 drivers in finishing order
+    </ResponseField>
+    
+    <ResponseField name="dnf_count" type="integer" required>
+      Total number of drivers who did not finish
+    </ResponseField>
+    
+    <ResponseField name="sc_deployments" type="array<integer>" required>
+      Lap numbers when safety car was deployed
+    </ResponseField>
+  </Tab>
+  
+  <Tab title="Season Prediction">
+    ```json
+    {
+      "standings": [
+        {
+          "name": "Max Verstappen",
+          "team": "Red Bull Racing",
+          "points": 425,
+          "wins": 15,
+          "podiums": 20,
+          "dnfs": 1
+        }
+      ],
+      "race_results": [
+        {
+          "round": 1,
+          "race": "Bahrain Grand Prix",
+          "weather": "DRY",
+          "winner": "Max Verstappen",
+          "p2": "Lewis Hamilton",
+          "p3": "Charles Leclerc",
+          "dnfs": 2
+        }
+      ]
+    }
+    ```
+    
+    <ResponseField name="standings" type="array<object>" required>
+      Championship standings for all drivers sorted by points
+    </ResponseField>
+    
+    <ResponseField name="race_results" type="array<object>" required>
+      Results for every race in the 2026 season
+    </ResponseField>
+  </Tab>
+</Tabs>
+
+---
+
+## Error Responses
+
+### Error Response Format
+
+Error responses include an `error` field with a descriptive message:
+
+```json
+{
+  "error": "Description of what went wrong"
+}
+```
+
+### HTTP Status Codes
+
+<ResponseField name="200" type="OK">
+  Request succeeded. Response contains requested data.
+</ResponseField>
+
+<ResponseField name="500" type="Internal Server Error">
+  Server-side error occurred. Common causes:
+  - ML model not loaded
+  - Required data files missing
+  - Race simulation engine error
+</ResponseField>
+
+### Common Error Scenarios
+
+<CodeGroup>
+```json Model Not Loaded
+{
+  "error": "Model not loaded"
+}
+```
+
+```json Missing Data File
+{
+  "error": "No 2026 predictions found. Run season_2026_calendar.py first!"
+}
+```
+
+```json Missing Driver Stats
+{
+  "error": "Run driver_stats_real.py first"
+}
+```
+
+```json Simulation Error
+{
+  "error": "race_engine.py not found. Place it in the same folder as app.py"
+}
+```
+</CodeGroup>
+
+<Warning>
+  Some endpoints require data generation scripts to be run before they can return results. Check the error message for specific instructions.
+</Warning>
+
+---
+
+## Data Types
+
+### Primitive Types
+
+<ParamField body="string" type="string">
+  Text values, UTF-8 encoded. Examples: driver names, team names, weather conditions.
+</ParamField>
+
+<ParamField body="integer" type="integer">
+  Whole numbers. Examples: grid positions (1-20), points, wins, laps.
+</ParamField>
+
+<ParamField body="float" type="float">
+  Decimal numbers. Examples: probabilities (0.0-1.0), lap times, time gaps.
+</ParamField>
+
+<ParamField body="boolean" type="boolean">
+  True/false values. Examples: DNF status, wet race indicator.
+</ParamField>
+
+<ParamField body="array" type="array">
+  Ordered list of values. Can contain primitives or objects. Examples: driver lists, statistics arrays.
+</ParamField>
+
+<ParamField body="object" type="object">
+  Key-value pairs (JSON object). Examples: driver details, race results.
+</ParamField>
+
+### Enumerated Values
+
+Certain fields accept only specific predefined values:
+
+#### Weather Types
+- `DRY` - Sunny/dry conditions
+- `LIGHT_RAIN` - Light rain
+- `HEAVY_RAIN` - Heavy rain/storm conditions
+
+#### Tire Compounds
+- `SOFT` - Soft compound (fastest, high degradation)
+- `MEDIUM` - Medium compound (balanced)
+- `HARD` - Hard compound (slowest, low degradation)
+
+#### Circuit Types
+- `STANDARD` - Standard racing circuit
+- `STREET` - Street circuit (Monaco-style)
+- `FAST` - High-speed circuit (Monza-style)
+- `DESERT` - Desert circuit
+- `TECHNICAL` - Technical circuit with tight corners
+
+#### Driver Codes (3-letter)
+
+**Red Bull Racing:** VER, LAW  
+**Ferrari:** HAM, LEC  
+**McLaren:** NOR, PIA  
+**Mercedes:** RUS, ANT  
+**Aston Martin:** ALO, STR  
+**Alpine:** GAS, DOO  
+**Williams:** SAI, ALB  
+**Haas:** OCO, BEA  
+**Racing Bulls:** TSU, HAD  
+**Sauber:** HUL, BOR
+
+---
+
+## Complex Response Objects
+
+### Driver Result Object
+
+Returned in lap-by-lap race simulations:
+
+```json
+{
+  "position": 1,
+  "name": "Max Verstappen",
+  "team": "Red Bull Racing",
+  "gap": 0.0,
+  "dnf": false,
+  "dnf_lap": null,
+  "tires_used": ["SOFT", "MEDIUM"],
+  "pit_laps": [18],
+  "laps_led": 45,
+  "positions": [1, 1, 1, 2, 1],
+  "color": "#1E41FF",
+  "events": [
+    "Pit stop on L18: SOFT → MEDIUM",
+    "Fastest lap on L42"
+  ]
+}
+```
+
+<ResponseField name="position" type="integer" required>
+  Final finishing position (1-20)
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Driver's full name
+</ResponseField>
+
+<ResponseField name="team" type="string" required>
+  Team/constructor name
+</ResponseField>
+
+<ResponseField name="gap" type="float" required>
+  Time gap to winner in seconds (0.0 for winner)
+</ResponseField>
+
+<ResponseField name="dnf" type="boolean" required>
+  Whether driver retired from the race
+</ResponseField>
+
+<ResponseField name="dnf_lap" type="integer">
+  Lap number where DNF occurred (null if finished)
+</ResponseField>
+
+<ResponseField name="tires_used" type="array<string>" required>
+  Tire compounds used during race in order (e.g., ["SOFT", "MEDIUM", "HARD"])
+</ResponseField>
+
+<ResponseField name="pit_laps" type="array<integer>" required>
+  Lap numbers where pit stops occurred
+</ResponseField>
+
+<ResponseField name="laps_led" type="integer" required>
+  Number of laps spent in P1
+</ResponseField>
+
+<ResponseField name="positions" type="array<integer>" required>
+  Position at each lap for position chart visualization
+</ResponseField>
+
+<ResponseField name="color" type="string" required>
+  Team color as hex code (e.g., "#1E41FF")
+</ResponseField>
+
+<ResponseField name="events" type="array<string>" required>
+  Notable events for this driver (pit stops, penalties, overtakes)
+</ResponseField>
+
+### Championship Standing Object
+
+Returned in season predictions:
+
+```json
+{
+  "name": "Max Verstappen",
+  "team": "Red Bull Racing",
+  "points": 425,
+  "wins": 15,
+  "podiums": 20,
+  "dnfs": 1
+}
+```
+
+<ResponseField name="name" type="string" required>
+  Driver's full name
+</ResponseField>
+
+<ResponseField name="team" type="string" required>
+  Team name
+</ResponseField>
+
+<ResponseField name="points" type="integer" required>
+  Total championship points
+</ResponseField>
+
+<ResponseField name="wins" type="integer" required>
+  Number of race victories
+</ResponseField>
+
+<ResponseField name="podiums" type="integer" required>
+  Number of top-3 finishes
+</ResponseField>
+
+<ResponseField name="dnfs" type="integer" required>
+  Number of retirements
+</ResponseField>
+
+### Race Result Object
+
+Returned in 2026 season predictions:
+
+```json
+{
+  "round": 1,
+  "race": "Bahrain Grand Prix",
+  "weather": "DRY",
+  "winner": "Max Verstappen",
+  "p2": "Lewis Hamilton",
+  "p3": "Charles Leclerc",
+  "dnfs": 2
+}
+```
+
+<ResponseField name="round" type="integer" required>
+  Race number in championship (1-24)
+</ResponseField>
+
+<ResponseField name="race" type="string" required>
+  Grand Prix name
+</ResponseField>
+
+<ResponseField name="weather" type="string" required>
+  Weather conditions (DRY, LIGHT_RAIN, HEAVY_RAIN)
+</ResponseField>
+
+<ResponseField name="winner" type="string" required>
+  Race winner's name
+</ResponseField>
+
+<ResponseField name="p2" type="string" required>
+  Second place driver
+</ResponseField>
+
+<ResponseField name="p3" type="string" required>
+  Third place driver
+</ResponseField>
+
+<ResponseField name="dnfs" type="integer" required>
+  Number of DNFs in this race
+</ResponseField>
+
+---
+
+## Request Headers
+
+No special headers are required for API requests. Standard HTTP headers are sufficient:
+
+```bash
+GET /api/predict_v2?grid=1&weather=DRY HTTP/1.1
+Host: localhost:5000
+```
+
+---
+
+## CORS Policy
+
+The Flask application runs in development mode with default CORS settings. Cross-origin requests may require additional configuration in production environments.
+
+---
+
+## Rate Limiting
+
+No rate limiting is currently implemented. The API is designed for local development and testing.
+
+<Info>
+  For production deployments, consider implementing rate limiting and authentication mechanisms.
+</Info>
+
+---
+
+## Response Times
+
+<Card title="Endpoint Performance" icon="clock">
+  
+  **Fast Endpoints** (< 100ms)
+  - `/api/predict_v2` - Simple model inference
+  - `/api/feature_importance` - Cached feature data
+  - `/api/simulate_race` - Basic randomization
+  
+  **Medium Endpoints** (100ms - 1s)
+  - `/api/compare` - File read + processing
+  - `/api/season_2026` - File read + parsing
+  
+  **Slow Endpoints** (1s - 5s)
+  - `/api/lap_race` - Full race simulation with 50 laps
+  - `/api/simulate_championship` - Multiple race simulations
+  
+</Card>
+
+<Tip>
+  The `/api/lap_race` endpoint is the most computationally intensive as it simulates every lap with pit stops, tire degradation, and random events. Consider implementing caching for frequently requested simulations.
+</Tip>
+
+---
+
+## Content-Type
+
+All responses have `Content-Type: application/json` header.
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 1234
+
+{
+  "probability": 0.8247,
+  "prediction": "Top-3 Likely"
+}
+```

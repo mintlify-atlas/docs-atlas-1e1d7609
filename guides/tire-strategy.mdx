@@ -1,0 +1,422 @@
+---
+title: 'Tire Strategy'
+description: 'Model tire degradation and optimize pit stop strategies'
+icon: 'tire'
+---
+
+## Overview
+
+Tire strategy is crucial in Formula 1. The system models tire degradation rates, optimal pit windows, and compound performance to help predict race outcomes and strategy decisions.
+
+## Tire Compounds
+
+The system models five tire compounds with distinct characteristics:
+
+<Tabs>
+  <Tab title="Soft (Red)">
+    **Performance:** Fastest lap times
+    
+    **Degradation:** High (0.085 sec/lap)
+    
+    **Optimal Window:** Laps 1-18
+    
+    **Cliff Point:** Lap 18
+    
+    ```python
+    TIRE_PACE['SOFT'] = 0.0      # No time penalty (baseline)
+    TIRE_DEG['SOFT'] = 0.085     # Fast degradation
+    TIRE_CLIFF['SOFT'] = 18      # Performance drops after lap 18
+    ```
+  </Tab>
+  
+  <Tab title="Medium (Yellow)">
+    **Performance:** Balanced
+    
+    **Degradation:** Moderate (0.050 sec/lap)
+    
+    **Optimal Window:** Laps 1-28
+    
+    **Cliff Point:** Lap 28
+    
+    ```python
+    TIRE_PACE['MEDIUM'] = 0.4    # +0.4s slower than soft
+    TIRE_DEG['MEDIUM'] = 0.050   # Moderate degradation
+    TIRE_CLIFF['MEDIUM'] = 28    # Performance drops after lap 28
+    ```
+  </Tab>
+  
+  <Tab title="Hard (White)">
+    **Performance:** Slowest but most durable
+    
+    **Degradation:** Low (0.028 sec/lap)
+    
+    **Optimal Window:** Laps 1-40
+    
+    **Cliff Point:** Lap 40
+    
+    ```python
+    TIRE_PACE['HARD'] = 0.8      # +0.8s slower than soft
+    TIRE_DEG['HARD'] = 0.028     # Slow degradation
+    TIRE_CLIFF['HARD'] = 40      # Performance drops after lap 40
+    ```
+  </Tab>
+  
+  <Tab title="Intermediate">
+    **Performance:** Wet conditions
+    
+    **Degradation:** Moderate (0.060 sec/lap)
+    
+    **Use Case:** Light rain
+    
+    ```python
+    TIRE_PACE['INTER'] = 1.5     # +1.5s in optimal wet conditions
+    TIRE_DEG['INTER'] = 0.060
+    TIRE_CLIFF['INTER'] = 22
+    ```
+  </Tab>
+  
+  <Tab title="Wet">
+    **Performance:** Heavy rain only
+    
+    **Degradation:** Low (0.035 sec/lap)
+    
+    **Use Case:** Heavy rain
+    
+    ```python
+    TIRE_PACE['WET'] = 3.0       # +3.0s in heavy rain
+    TIRE_DEG['WET'] = 0.035
+    TIRE_CLIFF['WET'] = 30
+    ```
+  </Tab>
+</Tabs>
+
+## Tire Degradation Model
+
+The race engine calculates lap times with tire degradation:
+
+```python race_engine.py
+def base_lap_time(self, lap, weather, sc_active):
+    """Calculate lap time for this lap"""
+    base = 90.0   # base lap time in seconds
+
+    # Car performance
+    base -= (self.car - 0.85) * 12.0
+
+    # Driver skill (adjusted for weather)
+    eff_skill = self.wet_skill if weather in ["LIGHT_RAIN","HEAVY_RAIN"] else self.skill
+    base -= (eff_skill - 0.85) * 8.0
+
+    # Tire compound offset
+    base += TIRE_PACE.get(self.tire, 0.8)
+
+    # Tire degradation
+    deg = TIRE_DEG.get(self.tire, 0.05)
+    cliff = TIRE_CLIFF.get(self.tire, 25)
+    
+    # Degradation accelerates after cliff point
+    age_factor = self.tire_age if self.tire_age < cliff else \
+                 cliff + (self.tire_age - cliff) * 2.2
+    base += deg * age_factor
+
+    # Safety car effect
+    if sc_active:
+        base = max(base, 115.0)   # slow down behind SC
+
+    # Random variation (±0.4s)
+    base += random.gauss(0, 0.4)
+
+    return max(base, 82.0)
+```
+
+### Degradation Examples
+
+**Soft Tire Lap Times:**
+
+| Lap | Tire Age | Base Time | Degradation | Total |
+|-----|----------|-----------|-------------|---------|
+| 1   | 0        | 90.0s     | 0.00s       | 90.0s   |
+| 5   | 5        | 90.0s     | 0.43s       | 90.4s   |
+| 10  | 10       | 90.0s     | 0.85s       | 90.9s   |
+| 18  | 18       | 90.0s     | 1.53s       | 91.5s   |
+| 20  | 20       | 90.0s     | **3.77s**   | 93.8s   |
+
+<Note>
+  Notice the **cliff effect** at lap 18 where degradation rate more than doubles!
+</Note>
+
+## Pit Stop Strategy
+
+The system models different pit stop strategies:
+
+```python race_engine.py
+# Pit stop time loss
+PIT_LOSS = 22.0   # seconds lost in pit lane
+
+# Strategy definitions
+STRATEGIES = {
+    "S-M":  {"start": "SOFT",   "pits": [18],       "compounds": ["SOFT",   "MEDIUM"]},
+    "M-H":  {"start": "MEDIUM", "pits": [26],       "compounds": ["MEDIUM", "HARD"]},
+    "H-M":  {"start": "HARD",   "pits": [34],       "compounds": ["HARD",   "MEDIUM"]},
+    "S-M-H":{"start": "SOFT",   "pits": [15, 32],   "compounds": ["SOFT",   "MEDIUM", "HARD"]},
+    "M-M":  {"start": "MEDIUM", "pits": [28],       "compounds": ["MEDIUM", "MEDIUM"]},
+}
+```
+
+### Strategy Comparison
+
+<CodeGroup>
+
+```python Soft-Medium (Aggressive)
+# Start on softs, pit lap 18 for mediums
+strategy = STRATEGIES["S-M"]
+
+# Lap 1-18: Fast pace on softs
+# Lap 19-50: Consistent pace on mediums
+# Total pit stops: 1
+# Time cost: 22 seconds
+
+# Best for: Top teams starting from front
+```
+
+```python Medium-Hard (Conservative)
+# Start on mediums, pit lap 26 for hards
+strategy = STRATEGIES["M-H"]
+
+# Lap 1-26: Balanced pace
+# Lap 27-50: Long stint on hards
+# Total pit stops: 1
+# Time cost: 22 seconds
+
+# Best for: Midfield teams, uncertain weather
+```
+
+```python Soft-Medium-Hard (2-Stop)
+# Aggressive early, two pit stops
+strategy = STRATEGIES["S-M-H"]
+
+# Lap 1-15: Push hard on softs
+# Lap 16-32: Attack on mediums
+# Lap 33-50: Finish on hards
+# Total pit stops: 2
+# Time cost: 44 seconds
+
+# Best for: Track position battles, undercuts
+```
+
+</CodeGroup>
+
+## Strategy Assignment
+
+Strategies are assigned based on grid position and team performance:
+
+```python race_engine.py
+def assign_strategies(weather):
+    """Assign strategies to all 20 drivers"""
+    assignments = {}
+    grid = list(DRIVERS.keys())
+    random.shuffle(grid)
+
+    for i, code in enumerate(grid):
+        if weather == "HEAVY_RAIN":
+            # All on wet tires
+            s = WET_STRATEGY.copy()
+        elif weather == "LIGHT_RAIN":
+            # Start on intermediates
+            s = STRATEGIES["M-H"].copy()
+            s["start"] = "INTER"
+            s["compounds"] = ["INTER", "MEDIUM"]
+        else:
+            # Vary strategies realistically
+            if i < 6:    # top teams
+                key = random.choice(["S-M", "M-H", "S-M-H"])
+            elif i < 12: # midfield
+                key = random.choice(["M-H", "H-M", "M-M"])
+            else:        # backmarkers
+                key = random.choice(["H-M", "M-H"])
+            s = {k: list(v) if isinstance(v, list) else v
+                 for k, v in STRATEGIES[key].items()}
+        assignments[code] = s
+
+    return assignments
+```
+
+## Pit Stop Execution
+
+Pit stops are executed during the race simulation:
+
+```python race_engine.py
+# Pit stop decision
+pitting = False
+if car.pit_stops and lap == car.pit_stops[0]:
+    pitting = True
+elif sc_active and car.pit_stops and abs(lap - car.pit_stops[0]) <= 3:
+    # Take advantage of SC to pit early/late
+    pitting = True
+    car.events.append(f"L{lap}: Pit under Safety Car!")
+
+if pitting:
+    car.pit_stops.pop(0)
+    car.compound_idx += 1
+    next_cpd = car.compounds[min(car.compound_idx, len(car.compounds)-1)]
+
+    # Handle wet/dry transitions
+    if current_weather in ["LIGHT_RAIN","HEAVY_RAIN"] and \
+       next_cpd in ["SOFT","MEDIUM","HARD"]:
+        next_cpd = "INTER"
+    elif current_weather == "DRY" and next_cpd == "WET":
+        next_cpd = "MEDIUM"
+
+    car.tire     = next_cpd
+    car.tire_age = 0
+    car.pit_count += 1
+    car.pit_laps.append(lap)
+    car.total_time += PIT_LOSS
+    car.events.append(f"L{lap}: PIT → {next_cpd} tires (pit #{car.pit_count})")
+```
+
+## Undercut vs Overcut
+
+### Undercut Strategy
+
+Pit earlier than your opponent to gain track position:
+
+```python
+# Example: Undercut attempt
+# Driver A: Pits lap 16 (early)
+# Driver B: Pits lap 18 (planned)
+
+# Lap 16: A pits (loses 22s)
+# Lap 17: A on fresh tires (3s faster), B on old tires
+# Lap 18: A still faster, B pits
+# Lap 19: A ahead of B despite pitting first!
+```
+
+**Time Advantage:**
+- Fresh tire pace: ~2-3 seconds/lap faster
+- Needs 8-10 laps gap to undercut successfully
+- Works best with significant tire degradation
+
+### Overcut Strategy
+
+Stay out longer on old tires:
+
+```python
+# Example: Overcut defense
+# Driver A: Pits lap 18
+# Driver B: Stays out until lap 22
+
+# Laps 19-22: B builds gap despite slower tires
+# Lap 22: B pits with 8+ second gap
+# Outcome: B retains position after pit stop
+```
+
+**Requirements:**
+- Tire life must last without major degradation
+- Need clean air (no traffic)
+- Higher risk if safety car deploys
+
+## Optimal Pit Windows
+
+Calculate optimal pit laps based on tire compound:
+
+```python
+# Optimal pit windows (50-lap race)
+OPTIMAL_PIT_LAPS = {
+    'SOFT': {
+        'one_stop': [15, 18, 20],  # Early pit required
+        'two_stop': [12, 28]       # Two stop strategy
+    },
+    'MEDIUM': {
+        'one_stop': [24, 26, 28],  # Mid-race pit
+        'two_stop': [18, 35]       # Balanced two-stop
+    },
+    'HARD': {
+        'one_stop': [32, 35, 38],  # Late pit window
+        'two_stop': None           # Hard rarely works for 2-stop
+    }
+}
+```
+
+## Weather-Dependent Strategy
+
+Weather changes require strategy adaptation:
+
+```python race_engine.py
+# Weather change detection
+if current_weather == "DRY" and roll < 0.03:
+    current_weather = "LIGHT_RAIN"
+    weather_history.append((lap, current_weather))
+    for c in cars.values():
+        c.events.append(f"L{lap}: Rain starts!")
+
+# Tire transitions during wet weather
+if current_weather in ["LIGHT_RAIN","HEAVY_RAIN"] and \
+   next_cpd in ["SOFT","MEDIUM","HARD"]:
+    next_cpd = "INTER"  # Switch to intermediates
+```
+
+**Rain Strategy Rules:**
+
+1. **Dry → Light Rain**: Switch to Intermediates immediately
+2. **Light Rain → Heavy Rain**: Switch to Full Wets
+3. **Drying Track**: Gamble on slicks early for advantage
+
+## Race Simulation Output
+
+The simulation tracks tire usage for all drivers:
+
+```json
+{
+  "position": 1,
+  "name": "Max Verstappen",
+  "team": "Red Bull",
+  "total_time": 4536.245,
+  "pit_count": 1,
+  "pit_laps": [18],
+  "tires_used": ["SOFT", "MEDIUM"],
+  "fastest_lap": 89.234
+}
+```
+
+**Tire Strategy Visualization:**
+
+```
+P1: Max Verstappen
+    Lap 1-18:  SOFT   (18 laps) → PIT
+    Lap 19-50: MEDIUM (32 laps) → FINISH
+    Total: 1 stop, 22s lost
+
+P2: Lando Norris
+    Lap 1-26:  MEDIUM (26 laps) → PIT
+    Lap 27-50: HARD   (24 laps) → FINISH
+    Total: 1 stop, 22s lost
+```
+
+## Dashboard Integration
+
+The web dashboard displays tire strategy recommendations:
+
+```python app.py
+# Tire strategy data
+fd['Tire_Degradation_Rate'] = 0.08 if tire=='SOFT' else \
+                               0.05 if tire=='MEDIUM' else 0.03
+fd['Optimal_Pit_Lap'] = 25 if tire=='SOFT' else \
+                        35 if tire=='MEDIUM' else 45
+fd['Tire_Advantage'] = 1.0 if tire=='SOFT' else \
+                       0.8 if tire=='MEDIUM' else 0.6
+```
+
+<Warning>
+  **Safety Car Impact**: A safety car deployment can completely change optimal strategy. Teams often pit under safety car to minimize time loss (only ~10s vs 22s).
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Race Simulation" icon="flag-checkered" href="/guides/race-simulation">
+    Run full races with tire strategies in action
+  </Card>
+  <Card title="Making Predictions" icon="crystal-ball" href="/guides/making-predictions">
+    Use tire data to improve race predictions
+  </Card>
+</CardGroup>

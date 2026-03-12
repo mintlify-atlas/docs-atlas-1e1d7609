@@ -1,0 +1,407 @@
+---
+title: 'Making Predictions'
+description: 'Use trained ML models to predict race winners and podium finishes'
+icon: 'crystal-ball'
+---
+
+## Overview
+
+Once your models are trained, you can use them to predict race outcomes based on driver stats, grid position, weather conditions, and other factors. This guide covers both programmatic API usage and web dashboard predictions.
+
+## Loading Trained Models
+
+Load your saved models using joblib:
+
+```python
+import joblib
+import pandas as pd
+
+# Load models
+rf_model = joblib.load('./models/saved_models/winner_predictor_rf.pkl')
+xgb_model = joblib.load('./models/saved_models/winner_predictor_xgb.pkl')
+feature_columns = joblib.load('./models/saved_models/feature_columns.pkl')
+
+print(f"✓ Loaded models with {len(feature_columns)} features")
+```
+
+## Single Race Prediction
+
+### Using the WinnerPredictor Class
+
+The `predict_race()` method provides ensemble predictions:
+
+```python winner_predictor.py
+def predict_race(self, race_features):
+    """Predict winner for a new race"""
+    # Get probability predictions
+    rf_proba = self.rf_model.predict_proba(
+        race_features[self.feature_columns]
+    )[0]
+    xgb_proba = self.xgb_model.predict_proba(
+        race_features[self.feature_columns]
+    )[0]
+    
+    # Average ensemble
+    ensemble_proba = (rf_proba + xgb_proba) / 2
+    
+    return {
+        'rf_probability': rf_proba[1],
+        'xgb_probability': xgb_proba[1],
+        'ensemble_probability': ensemble_proba[1],
+        'prediction': int(ensemble_proba[1] > 0.5)
+    }
+```
+
+### Example: Predict from Grid Position
+
+Predict podium probability for a driver starting from pole:
+
+```python
+import pandas as pd
+
+# Create race features
+race_data = pd.DataFrame([{
+    'GridPosition': 1,  # Starting from pole
+    'Driver_AvgPosition': 2.5,
+    'Driver_AvgPoints': 18.5,
+    'Driver_TotalWins': 15,
+    'Driver_TotalPodiums': 35,
+    'Driver_Last5_AvgPosition': 2.0,
+    'Team_AvgPosition': 1.8,
+    'Team_TotalWins': 25,
+    'Team_AvgPoints': 400.0,
+    'AvgAirTemp': 25.0,
+    'IsRaining': 0
+}])
+
+# Make prediction
+result = predictor.predict_race(race_data)
+
+print(f"Random Forest Probability: {result['rf_probability']:.1%}")
+print(f"XGBoost Probability: {result['xgb_probability']:.1%}")
+print(f"Ensemble Probability: {result['ensemble_probability']:.1%}")
+print(f"Prediction: {result['prediction']}")
+```
+
+**Expected Output:**
+
+```
+Random Forest Probability: 78.5%
+XGBoost Probability: 81.2%
+Ensemble Probability: 79.9%
+Prediction: 1
+```
+
+## Flask API Predictions
+
+The web dashboard provides a REST API for predictions:
+
+### Enhanced Prediction Endpoint
+
+```python app.py
+@app.route('/api/predict_v2')
+def predict_v2():
+    if not model:
+        return jsonify({'error': 'Model not loaded'}), 500
+    
+    # Get parameters from request
+    grid = int(request.args.get('grid', 1))
+    weather = request.args.get('weather', 'DRY')
+    tire = request.args.get('tire', 'MEDIUM')
+    circuit = request.args.get('circuit', 'STANDARD')
+    
+    # Build feature dictionary
+    fd = {
+        'GridPosition': grid,
+        'Driver_AvgPosition': 3.0,
+        'Driver_AvgPoints': 15.0,
+        'Driver_TotalWins': 10,
+        'Driver_TotalPodiums': 25,
+        'Weather_Impact': 1.0 if weather=='DRY' else 1.05 if weather=='LIGHT_RAIN' else 1.15,
+        'Is_Wet_Race': 0 if weather=='DRY' else 1,
+        'Tire_Degradation_Rate': 0.08 if tire=='SOFT' else 0.05 if tire=='MEDIUM' else 0.03,
+        'Optimal_Pit_Lap': 25 if tire=='SOFT' else 35 if tire=='MEDIUM' else 45,
+        'Tire_Advantage': 1.0 if tire=='SOFT' else 0.8 if tire=='MEDIUM' else 0.6,
+        'Circuit_Familiarity': 5,
+        'Is_Street_Circuit': 1 if circuit=='STREET' else 0,
+        'Is_High_Speed': 1 if circuit=='FAST' else 0,
+        'Team_AvgPosition': 2.5,
+        'Team_TotalWins': 20,
+        'Team_AvgPoints': 300.0
+    }
+    
+    # Create DataFrame and predict
+    df = pd.DataFrame([fd])
+    for feat in features:
+        if feat not in df.columns:
+            df[feat] = 0
+    
+    prob = model.predict_proba(df[features])[0][1]
+    
+    # Generate insights
+    insights = f'P{grid} in {weather.lower()} on {tire.lower()} tires = '
+    insights += 'Excellent podium chances!' if prob > 0.7 else \
+                'Good podium chances!' if prob > 0.5 else \
+                'Tough but possible!'
+    
+    return jsonify({
+        'probability': float(prob),
+        'prediction': 'Top-3 Likely' if prob > 0.5 else 'Top-3 Unlikely',
+        'insights': insights
+    })
+```
+
+### API Usage Examples
+
+<CodeGroup>
+
+```bash cURL
+curl "http://localhost:5000/api/predict_v2?grid=1&weather=DRY&tire=SOFT&circuit=STANDARD"
+```
+
+```python Python
+import requests
+
+response = requests.get('http://localhost:5000/api/predict_v2', params={
+    'grid': 1,
+    'weather': 'DRY',
+    'tire': 'SOFT',
+    'circuit': 'STANDARD'
+})
+
+data = response.json()
+print(f"Probability: {data['probability']:.1%}")
+print(f"Prediction: {data['prediction']}")
+print(f"Insights: {data['insights']}")
+```
+
+```javascript JavaScript
+fetch('/api/predict_v2?grid=1&weather=DRY&tire=SOFT&circuit=STANDARD')
+  .then(res => res.json())
+  .then(data => {
+    console.log(`Probability: ${(data.probability * 100).toFixed(1)}%`);
+    console.log(`Prediction: ${data.prediction}`);
+    console.log(`Insights: ${data.insights}`);
+  });
+```
+
+</CodeGroup>
+
+**Example Response:**
+
+```json
+{
+  "probability": 0.823,
+  "prediction": "Top-3 Likely",
+  "insights": "P1 in dry on soft tires = Excellent podium chances!"
+}
+```
+
+## 2026 Season Predictions
+
+The system can simulate entire seasons with realistic driver lineups and circuits:
+
+### Season Simulation
+
+```python season_2026_calendar.py
+def simulate_qualifying(race_info, weather):
+    """Simulate qualifying to get grid positions"""
+    quali_scores = {}
+    
+    for code, driver in DRIVERS_2026.items():
+        # Base skill
+        skill = driver['skill']
+        
+        # Apply wet skill if qualifying in rain
+        if weather != 'DRY':
+            skill = (skill + driver['wet_skill']) / 2
+        
+        # Apply team car performance
+        team_boost = TEAM_PERFORMANCE_2026.get(driver['team'], 0.80)
+        
+        # Apply circuit specialist bonus
+        circuit_bonus = CIRCUIT_SPECIALIST.get(
+            race_info['circuit'], {}
+        ).get(code, 0)
+        
+        # Add realistic randomness
+        luck = np.random.normal(0, 0.06)
+        
+        quali_scores[code] = skill * team_boost + circuit_bonus + luck
+    
+    # Sort by qualifying score
+    sorted_drivers = sorted(
+        quali_scores.items(), 
+        key=lambda x: x[1], 
+        reverse=True
+    )
+    return {driver: pos + 1 for pos, (driver, _) in enumerate(sorted_drivers)}
+```
+
+### Race Simulation with DNFs
+
+```python season_2026_calendar.py
+def simulate_race(race_info, grid_positions, weather):
+    """Simulate race from grid positions"""
+    race_scores = {}
+    
+    for code, driver in DRIVERS_2026.items():
+        grid = grid_positions.get(code, 10)
+        skill = driver['skill']
+        
+        # Wet weather specialist bonus
+        if weather != 'DRY':
+            skill = (skill * 0.4) + (driver['wet_skill'] * 0.6)
+        
+        # Team car performance
+        team_boost = TEAM_PERFORMANCE_2026.get(driver['team'], 0.80)
+        
+        # Grid position penalty
+        grid_penalty = grid * 0.008
+        
+        # Race luck and DNF chance (5% per race)
+        race_luck = np.random.normal(0, 0.09)
+        dnf = np.random.random() < 0.05
+        
+        if dnf:
+            race_scores[code] = -1.0  # DNF marker
+            continue
+        
+        race_scores[code] = (skill * team_boost) + circuit_bonus - grid_penalty + race_luck
+    
+    # Sort results (DNFs go to back)
+    sorted_results = sorted(race_scores.items(), key=lambda x: x[1], reverse=True)
+    return sorted_results
+```
+
+### Accessing Season Data via API
+
+```python app.py
+@app.route('/api/season_2026')
+def season_2026():
+    try:
+        with open('./data/2026_prediction.json', 'r') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except:
+        return jsonify({
+            'error': 'No 2026 predictions found. Run season_2026_calendar.py first!'
+        })
+```
+
+**Example Season Output:**
+
+```
+🏎️  2026 F1 WORLD CHAMPIONSHIP PREDICTION
+
+Round  1: Bahrain Grand Prix              ☀️
+   🥇 Max Verstappen             (Red Bull)
+   🥈 Lando Norris               (McLaren)
+   🥉 Charles Leclerc            (Ferrari)
+
+Round  2: Saudi Arabian Grand Prix        ☀️
+   🥇 Charles Leclerc            (Ferrari)
+   🥈 Max Verstappen             (Red Bull)
+   🥉 Lewis Hamilton             (Ferrari)
+
+...
+
+🏆  FINAL 2026 CHAMPIONSHIP STANDINGS
+Pos  Driver                    Team             Pts  Wins  Pods  DNFs
+-------------------------------------------------------------------
+🏆  Max Verstappen            Red Bull          487    15    20     1
+🥈  Lando Norris              McLaren           398     5    16     0
+🥉  Charles Leclerc           Ferrari           375     3    14     2
+```
+
+## Batch Predictions
+
+Predict outcomes for multiple scenarios:
+
+```python
+import pandas as pd
+
+# Create multiple scenarios
+scenarios = [
+    {'GridPosition': 1, 'Driver_AvgPosition': 2.0, 'IsRaining': 0},
+    {'GridPosition': 5, 'Driver_AvgPosition': 2.0, 'IsRaining': 0},
+    {'GridPosition': 1, 'Driver_AvgPosition': 2.0, 'IsRaining': 1},
+    {'GridPosition': 10, 'Driver_AvgPosition': 2.0, 'IsRaining': 1},
+]
+
+# Fill in missing features with defaults
+for scenario in scenarios:
+    scenario.update({
+        'Driver_AvgPoints': 15.0,
+        'Driver_TotalWins': 10,
+        'Team_AvgPosition': 2.5,
+        'Team_TotalWins': 20
+    })
+
+# Predict all scenarios
+df = pd.DataFrame(scenarios)
+for feat in feature_columns:
+    if feat not in df.columns:
+        df[feat] = 0
+
+probabilities = model.predict_proba(df[feature_columns])[:, 1]
+
+for i, (scenario, prob) in enumerate(zip(scenarios, probabilities)):
+    weather = 'Wet' if scenario['IsRaining'] else 'Dry'
+    print(f"Scenario {i+1}: P{scenario['GridPosition']} in {weather} = {prob:.1%}")
+```
+
+**Output:**
+
+```
+Scenario 1: P1 in Dry = 78.5%
+Scenario 2: P5 in Dry = 42.3%
+Scenario 3: P1 in Wet = 65.2%
+Scenario 4: P10 in Wet = 28.7%
+```
+
+<Note>
+  **Ensemble Predictions** combine Random Forest and XGBoost results for improved accuracy. The system achieves ~85-88% accuracy on test data.
+</Note>
+
+## Feature Importance in Predictions
+
+Understand which features drive predictions:
+
+```python app.py
+@app.route('/api/feature_importance')
+def feature_importance():
+    if not model:
+        return jsonify({'error': 'Model not loaded'}), 500
+    
+    importance = model.feature_importances_
+    idx = sorted(range(len(importance)), key=lambda i: importance[i], reverse=True)
+    
+    return jsonify({
+        'features': [features[i] for i in idx],
+        'importance': [float(importance[i]) for i in idx]
+    })
+```
+
+## Prediction Confidence
+
+The probability score indicates prediction confidence:
+
+- **> 0.7**: High confidence (Excellent chances)
+- **0.5 - 0.7**: Moderate confidence (Good chances)
+- **< 0.5**: Low confidence (Unlikely)
+
+<Warning>
+  Predictions are probabilistic and based on historical patterns. Real races can have unexpected outcomes due to incidents, strategy, and mechanical failures.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Tire Strategy" icon="tire" href="/guides/tire-strategy">
+    Optimize pit stop strategies with degradation modeling
+  </Card>
+  <Card title="Race Simulation" icon="flag-checkered" href="/guides/race-simulation">
+    Run full lap-by-lap race simulations
+  </Card>
+</CardGroup>

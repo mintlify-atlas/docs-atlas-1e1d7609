@@ -1,0 +1,507 @@
+---
+title: 'Roadmap'
+description: 'Future improvements, planned features, and development timeline for the F1 ML Prediction System'
+icon: 'map'
+---
+
+## Project Vision
+
+The F1 ML Prediction System aims to become the most comprehensive open-source Formula 1 analytics platform, combining machine learning, real-time data, and advanced race simulations.
+
+<Note>
+This roadmap is a living document. Features are prioritized based on impact, feasibility, and community feedback.
+</Note>
+
+## Current Status
+
+<Steps>
+  <Step title="Phase 1: Foundation" icon="check">
+    ✅ **COMPLETE** - Data collection, basic models, web dashboard
+    
+    - 7 years of historical data collected
+    - Random Forest + XGBoost ensemble trained
+    - Interactive Flask dashboard deployed
+    - 85% prediction accuracy achieved
+  </Step>
+  
+  <Step title="Phase 2: Enhancement" icon="check">
+    ✅ **COMPLETE** - Weather, tire strategy, circuit factors
+    
+    - Weather impact modeling
+    - Tire degradation analysis
+    - Circuit-specific features
+    - 2026 season predictions
+  </Step>
+  
+  <Step title="Phase 3: Advanced Features" icon="spinner">
+    🔄 **IN PROGRESS** - Advanced ML and real-time updates
+    
+    Currently working on:
+    - Neural network models
+    - Safety car prediction
+    - Live race updates
+  </Step>
+  
+  <Step title="Phase 4: Production" icon="clock">
+    📋 **PLANNED** - Cloud deployment and mobile apps
+    
+    Upcoming in 2026:
+    - Cloud hosting
+    - Mobile applications
+    - User authentication
+    - Premium features
+  </Step>
+</Steps>
+
+## Roadmap Timeline
+
+### Q1 2026: Model Improvements
+
+<AccordionGroup>
+  <Accordion title="Add Qualifying Session Data" icon="flag">
+    **Priority:** High
+    
+    **Goal:** Improve grid position predictions with actual qualifying telemetry
+    
+    **Features:**
+    - Qualifying lap times (Q1, Q2, Q3)
+    - Sector times and mini-sectors
+    - Speed trap data
+    - Tire compound used in qualifying
+    - Track evolution effects
+    
+    **Expected Impact:** +3-5% prediction accuracy
+    
+    **Status:** 📋 Planned for March 2026
+  </Accordion>
+  
+  <Accordion title="Include Practice Session Telemetry" icon="gauge">
+    **Priority:** Medium
+    
+    **Goal:** Understand car performance before the race
+    
+    **Features:**
+    - FP1/FP2/FP3 long-run pace
+    - Race simulation data
+    - Tire degradation in practice
+    - Setup correlation with race results
+    
+    **Expected Impact:** Better car performance predictions
+    
+    **Status:** 📋 Planned for Q1 2026
+  </Accordion>
+  
+  <Accordion title="Build Tire Degradation LSTM Model" icon="chart-line">
+    **Priority:** High
+    
+    **Goal:** Time-series prediction of tire performance
+    
+    **Approach:**
+    ```python
+    # LSTM architecture for tire modeling
+    model = Sequential([
+        LSTM(128, return_sequences=True, input_shape=(laps, features)),
+        Dropout(0.2),
+        LSTM(64),
+        Dense(32, activation='relu'),
+        Dense(1)  # Predicted lap time
+    ])
+    ```
+    
+    **Features:**
+    - Compound-specific degradation curves
+    - Temperature impact modeling
+    - Track surface effects
+    - Driver aggression factors
+    
+    **Expected Impact:** Accurate lap time predictions 10+ laps ahead
+    
+    **Status:** 🔄 Research phase, 30% complete
+  </Accordion>
+  
+  <Accordion title="Create Reinforcement Learning Pit Optimizer" icon="robot">
+    **Priority:** Medium-High
+    
+    **Goal:** Optimal pit stop timing using RL agents
+    
+    **Approach:**
+    - **State space:** Position, tire age, gap to cars ahead/behind, laps remaining
+    - **Action space:** Pit now, Stay out
+    - **Reward:** Final race position
+    
+    **Algorithm:** Deep Q-Network (DQN) or Proximal Policy Optimization (PPO)
+    
+    **Expected Impact:** Find non-obvious strategic pit windows
+    
+    **Status:** 📋 Design phase
+  </Accordion>
+</AccordionGroup>
+
+### Q2 2026: Enhanced Frontend
+
+<AccordionGroup>
+  <Accordion title="Add Race Simulation Visualization" icon="video">
+    **Priority:** High
+    
+    **Goal:** Live animated race progression
+    
+    **Features:**
+    - Track map with car positions
+    - Real-time lap counter
+    - Live timing tower
+    - Pit stop animations
+    - Safety car deployments
+    - Weather changes overlay
+    
+    **Technology:** Plotly Dash + WebSocket for real-time updates
+    
+    **Status:** 📋 Wireframes in progress
+  </Accordion>
+  
+  <Accordion title="Create Driver Comparison Charts" icon="chart-bar">
+    **Priority:** Medium
+    
+    **Goal:** Head-to-head driver analytics
+    
+    **Features:**
+    - Career statistics comparison
+    - Head-to-head race records
+    - Qualifying pace delta
+    - Wet weather performance
+    - Street circuit specialization
+    - Wheel-to-wheel racing metrics
+    
+    **Status:** ✅ 70% complete - basic comparison implemented
+  </Accordion>
+  
+  <Accordion title="Build Championship Standings Predictor" icon="trophy">
+    **Priority:** High
+    
+    **Goal:** Season-long championship simulation
+    
+    **Features:**
+    - Monte Carlo simulation (1000+ seasons)
+    - Probability distributions for each driver
+    - What-if scenario analysis
+    - DNF risk modeling
+    - Team development trajectory
+    
+    **Status:** 📋 Algorithm design complete, implementation pending
+  </Accordion>
+  
+  <Accordion title="Add Real-time Race Updates" icon="satellite">
+    **Priority:** Medium
+    
+    **Goal:** Live predictions during race weekends
+    
+    **Implementation:**
+    - Connect to FastF1 live timing API
+    - Update predictions every lap
+    - Adjust probabilities based on race events
+    - Push notifications for key moments
+    
+    **Challenges:** API rate limits, real-time processing
+    
+    **Status:** 📋 Feasibility study in progress
+  </Accordion>
+</AccordionGroup>
+
+### Q3 2026: Cloud Deployment
+
+<AccordionGroup>
+  <Accordion title="Deploy on Cloud Platform" icon="cloud">
+    **Priority:** High
+    
+    **Goal:** Public access to F1 ML predictions
+    
+    **Options:**
+    1. **Heroku** - Easy deployment, free tier available
+    2. **Railway** - Modern platform, good for Flask apps
+    3. **AWS Elastic Beanstalk** - Scalable, production-ready
+    4. **Google Cloud Run** - Serverless, cost-effective
+    
+    **Recommended:** Railway for MVP, AWS for scale
+    
+    **Infrastructure:**
+    ```
+    Frontend (React) → Vercel/Netlify
+    Backend (Flask) → Railway/Heroku
+    Database (PostgreSQL) → Railway/AWS RDS
+    Model Storage (S3) → AWS/Google Cloud Storage
+    ```
+    
+    **Status:** 📋 Platform selection in progress
+  </Accordion>
+  
+  <Accordion title="Set up PostgreSQL Database" icon="database">
+    **Priority:** High
+    
+    **Goal:** Move from CSV to production database
+    
+    **Schema:**
+    - `races` - Race metadata
+    - `drivers` - Driver information
+    - `teams` - Team/constructor data
+    - `results` - Race results
+    - `lap_times` - Lap telemetry
+    - `pit_stops` - Pit stop data
+    - `predictions` - Historical predictions
+    - `users` - User accounts (future)
+    
+    **Benefits:**
+    - Faster queries
+    - Concurrent access
+    - Data integrity
+    - Better scalability
+    
+    **Status:** 📋 Schema design complete
+  </Accordion>
+  
+  <Accordion title="Add User Authentication" icon="lock">
+    **Priority:** Medium
+    
+    **Goal:** User accounts and personalization
+    
+    **Features:**
+    - Sign up / Login (email + password)
+    - OAuth (Google, GitHub)
+    - Saved predictions
+    - Favorite drivers/teams
+    - Custom alerts
+    
+    **Technology:** Flask-Login + JWT tokens
+    
+    **Status:** 📋 Design phase
+  </Accordion>
+  
+  <Accordion title="Create Mobile App" icon="mobile">
+    **Priority:** Low-Medium
+    
+    **Goal:** iOS and Android applications
+    
+    **Approach:**
+    - React Native for cross-platform
+    - Native UI components
+    - Push notifications
+    - Offline mode (cached data)
+    
+    **Status:** 📋 Concept stage
+  </Accordion>
+</AccordionGroup>
+
+### Q4 2026: Advanced Analytics
+
+<AccordionGroup>
+  <Accordion title="Safety Car Probability Predictor" icon="triangle-exclamation">
+    **Priority:** Medium-High
+    
+    **Goal:** Predict safety car likelihood per race
+    
+    **Features:**
+    - Circuit-specific SC rates (Monaco 60%, Spa 20%)
+    - Weather correlation
+    - First-lap incident probability
+    - Historical pattern analysis
+    
+    **Training Data:**
+    - Safety car deployments 2018-2024
+    - Virtual safety cars
+    - Red flag events
+    
+    **Model:** Logistic Regression or Random Forest classifier
+    
+    **Expected Accuracy:** ~70% (SC events are inherently random)
+    
+    **Status:** 📋 Data collection phase
+  </Accordion>
+  
+  <Accordion title="DNF Risk Assessment" icon="exclamation">
+    **Priority:** Medium
+    
+    **Goal:** Predict retirement probability per driver
+    
+    **Features:**
+    - Mechanical reliability by team
+    - Driver crash history
+    - Circuit danger rating
+    - Starting position risk (P20 higher DNF chance)
+    - Weather impact on incidents
+    
+    **Use Case:** Adjust race predictions for DNF risk
+    
+    **Status:** 📋 Feature engineering phase
+  </Accordion>
+  
+  <Accordion title="Championship Monte Carlo Simulation" icon="dice">
+    **Priority:** High
+    
+    **Goal:** Probabilistic championship modeling
+    
+    **Approach:**
+    1. Run 10,000 simulated seasons
+    2. Each race uses ML predictions + randomness
+    3. Account for DNFs, weather, safety cars
+    4. Generate probability distribution
+    
+    **Output:**
+    - Championship win probability per driver
+    - P95/P5 confidence intervals
+    - Critical race importance scores
+    - Upset scenario analysis
+    
+    **Status:** 📋 Algorithm complete, needs implementation
+  </Accordion>
+  
+  <Accordion title="Driver Performance Clustering" icon="diagram-project">
+    **Priority:** Low-Medium
+    
+    **Goal:** Group drivers by racing style
+    
+    **Features:**
+    - Qualifying vs race pace
+    - Aggression metrics (overtakes/lap)
+    - Consistency (std dev of finishes)
+    - Wet weather skill
+    - Tire management ability
+    
+    **Algorithm:** K-Means clustering or DBSCAN
+    
+    **Clusters:**
+    - "Qualifiers" - Fast over one lap
+    - "Racers" - Strong race pace
+    - "Rainmasters" - Wet specialists
+    - "Defenders" - Position holders
+    
+    **Status:** 📋 Feature selection in progress
+  </Accordion>
+</AccordionGroup>
+
+## Long-term Vision (2027+)
+
+<CardGroup cols={2}>
+  <Card title="AI Race Engineer" icon="user-robot">
+    Virtual race engineer providing:
+    - Real-time strategy advice
+    - Pit stop recommendations
+    - Overtaking opportunity alerts
+    - Setup suggestions
+  </Card>
+  
+  <Card title="Fantasy F1 Integration" icon="wand-magic-sparkles">
+    Connect to fantasy leagues:
+    - Optimal lineup suggestions
+    - Captain picks based on predictions
+    - Differential driver recommendations
+  </Card>
+  
+  <Card title="Betting Odds Comparison" icon="chart-mixed">
+    Compare ML predictions vs bookmaker odds:
+    - Value bet identification
+    - Edge detection
+    - Historical ROI tracking
+  </Card>
+  
+  <Card title="Community Features" icon="users">
+    Social and community elements:
+    - Prediction competitions
+    - Leaderboards
+    - Discussion forums
+    - Shared custom models
+  </Card>
+</CardGroup>
+
+## Technical Debt & Refactoring
+
+<Warning>
+**Code Quality Improvements Needed:**
+
+1. **Testing:** Add unit tests and integration tests (currently 0% coverage)
+2. **Documentation:** Improve inline code documentation
+3. **Type Hints:** Add Python type annotations throughout
+4. **Error Handling:** Better exception handling and logging
+5. **Config Management:** Move hardcoded values to config files
+6. **API Versioning:** Implement proper API versioning (v1, v2, etc.)
+</Warning>
+
+## Contributing to the Roadmap
+
+We welcome community input on priorities and new feature ideas!
+
+<Steps>
+  <Step title="Review Current Roadmap">
+    Read through planned features and timelines
+  </Step>
+  
+  <Step title="Submit Feature Requests">
+    Open GitHub issues with:
+    - Clear use case description
+    - Expected impact
+    - Implementation ideas (if any)
+  </Step>
+  
+  <Step title="Vote on Priorities">
+    React to issues with 👍 to help prioritize features
+  </Step>
+  
+  <Step title="Contribute Code">
+    Pick an issue and submit a pull request:
+    - Fork the repository
+    - Create feature branch
+    - Implement with tests
+    - Submit PR for review
+  </Step>
+</Steps>
+
+## Success Metrics
+
+We measure project success through:
+
+<Tabs>
+  <Tab title="Model Performance">
+    - **Target:** 85%+ accuracy on test set
+    - **Current:** 80% (Random Forest), 85.9% (V2 Enhanced)
+    - **Goal:** 90%+ with neural networks
+  </Tab>
+  
+  <Tab title="User Engagement">
+    - **Target:** 1,000+ active users
+    - **Current:** Local development
+    - **Goal:** 10,000+ by end of 2026
+  </Tab>
+  
+  <Tab title="Code Quality">
+    - **Target:** 80%+ test coverage
+    - **Current:** 0% (no tests yet)
+    - **Goal:** Production-ready codebase
+  </Tab>
+  
+  <Tab title="Community">
+    - **Target:** 50+ GitHub stars
+    - **Current:** Private project
+    - **Goal:** 1,000+ stars, active contributors
+  </Tab>
+</Tabs>
+
+## Get Involved
+
+<CardGroup cols={2}>
+  <Card title="GitHub Repository" icon="github">
+    Star, fork, and contribute to the project
+  </Card>
+  
+  <Card title="Feature Requests" icon="lightbulb">
+    Suggest new features and improvements
+  </Card>
+  
+  <Card title="Bug Reports" icon="bug">
+    Report issues and help improve quality
+  </Card>
+  
+  <Card title="Discussions" icon="comments">
+    Join conversations about F1 analytics
+  </Card>
+</CardGroup>
+
+<Note>
+This roadmap reflects the current development priorities as of March 2026. Features and timelines may adjust based on progress and feedback.
+</Note>

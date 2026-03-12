@@ -1,0 +1,539 @@
+---
+title: 'Web Dashboard'
+description: 'Interactive Flask dashboard for predictions, simulations, and visualizations'
+icon: 'chart-line'
+---
+
+## Overview
+
+The F1 ML Prediction System includes a comprehensive web dashboard built with Flask and Plotly. It provides interactive race predictions, lap-by-lap simulations, driver comparisons, and 2026 season forecasts.
+
+## Starting the Dashboard
+
+Launch the Flask application:
+
+```bash
+python app.py
+```
+
+**Expected Output:**
+
+```
+============================================================
+F1 ML Server Pro V3 - http://localhost:5000
+============================================================
+
+Model V2 loaded!
+ * Serving Flask app 'app'
+ * Debug mode: on
+ * Running on http://127.0.0.1:5000
+```
+
+<Note>
+  The dashboard automatically loads saved models from `./models/saved_models/`. Ensure you've trained models before starting the dashboard.
+</Note>
+
+## Dashboard Architecture
+
+### Flask Application Setup
+
+```python app.py
+from flask import Flask, jsonify, request
+import joblib
+import pandas as pd
+import json
+
+app = Flask(__name__)
+
+# Load trained models
+try:
+    model = joblib.load('./models/saved_models/winner_predictor_v2.pkl')
+    features = joblib.load('./models/saved_models/feature_columns_v2.pkl')
+    print("Model V2 loaded!")
+except:
+    try:
+        model = joblib.load('./models/saved_models/winner_predictor_rf.pkl')
+        features = joblib.load('./models/saved_models/feature_columns.pkl')
+        print("Model V1 loaded")
+    except:
+        model = None
+        features = None
+
+@app.route('/')
+def home():
+    return open_html()  # Serves full HTML dashboard
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
+```
+
+## Dashboard Features
+
+### 1. Winner Predictor Tab
+
+Interactive prediction tool with multiple parameters:
+
+**Features:**
+- Grid position selection (P1-P15)
+- Weather conditions (Dry/Light Rain/Heavy Rain)
+- Tire compound choice (Soft/Medium/Hard)
+- Circuit type (Standard/Street/High-Speed/Desert)
+
+**API Endpoint:**
+
+```python app.py
+@app.route('/api/predict_v2')
+def predict_v2():
+    if not model:
+        return jsonify({'error': 'Model not loaded'}), 500
+    
+    # Extract parameters
+    grid = int(request.args.get('grid', 1))
+    weather = request.args.get('weather', 'DRY')
+    tire = request.args.get('tire', 'MEDIUM')
+    circuit = request.args.get('circuit', 'STANDARD')
+    
+    # Build feature dictionary
+    fd = {
+        'GridPosition': grid,
+        'Driver_AvgPosition': 3.0,
+        'Driver_AvgPoints': 15.0,
+        'Driver_TotalWins': 10,
+        'Driver_TotalPodiums': 25,
+        'Weather_Impact': 1.0 if weather=='DRY' else 1.05 if weather=='LIGHT_RAIN' else 1.15,
+        'Is_Wet_Race': 0 if weather=='DRY' else 1,
+        'Tire_Degradation_Rate': 0.08 if tire=='SOFT' else 0.05 if tire=='MEDIUM' else 0.03,
+        'Circuit_Familiarity': 5,
+        'Is_Street_Circuit': 1 if circuit=='STREET' else 0,
+        'Team_AvgPosition': 2.5
+    }
+    
+    # Create DataFrame and predict
+    df = pd.DataFrame([fd])
+    for feat in features:
+        if feat not in df.columns:
+            df[feat] = 0
+    
+    prob = model.predict_proba(df[features])[0][1]
+    
+    insights = f'P{grid} in {weather.lower()} on {tire.lower()} tires = '
+    insights += 'Excellent podium chances!' if prob > 0.7 else \
+                'Good podium chances!' if prob > 0.5 else \
+                'Tough but possible!'
+    
+    return jsonify({
+        'probability': float(prob),
+        'prediction': 'Top-3 Likely' if prob > 0.5 else 'Top-3 Unlikely',
+        'insights': insights
+    })
+```
+
+**Example Request:**
+
+```bash
+curl "http://localhost:5000/api/predict_v2?grid=1&weather=DRY&tire=SOFT&circuit=STANDARD"
+```
+
+**Response:**
+
+```json
+{
+  "probability": 0.823,
+  "prediction": "Top-3 Likely",
+  "insights": "P1 in dry on soft tires = Excellent podium chances!"
+}
+```
+
+### 2. Weather Impact Tab
+
+Statistical analysis of weather effects:
+
+**Content:**
+- Win rate comparisons (Dry: 42%, Light Rain: 35%, Heavy Rain: 23%)
+- Strategy recommendations per weather condition
+- Historical weather impact insights
+
+**Static Data:**
+
+```html app.py
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-value">42%</div>
+    <div class="stat-label">☀️ Dry Win Rate</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">35%</div>
+    <div class="stat-label">🌧️ Light Rain</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">23%</div>
+    <div class="stat-label">⛈️ Heavy Rain</div>
+  </div>
+</div>
+```
+
+### 3. Tire Strategy Tab
+
+Tire degradation rates and optimal pit windows:
+
+**Features:**
+- Compound comparison (Soft/Medium/Hard)
+- Degradation rates visualization
+- Recommended pit stop strategies
+- Pit stop time loss calculator
+
+**Content:**
+
+```html app.py
+<div class="strategy-card">
+  <h3>📋 Recommended Strategies</h3>
+  <p><strong>🔴 SOFT → 🟡 MEDIUM</strong></p>
+  <p style="margin-left:20px">Pit lap 18 • Aggressive early pace • Medium to finish</p>
+  
+  <p style="margin-top:15px"><strong>🟡 MEDIUM → ⚪ HARD</strong></p>
+  <p style="margin-left:20px">Pit lap 28 • Balanced approach • Consistent finish</p>
+  
+  <p style="margin-top:15px"><strong>⚪ HARD → 🟡 MEDIUM</strong></p>
+  <p style="margin-left:20px">Pit lap 38 • Conservative start • Late pace push</p>
+</div>
+```
+
+### 4. Feature Importance Tab
+
+Visualizes which features drive predictions:
+
+**API Endpoint:**
+
+```python app.py
+@app.route('/api/feature_importance')
+def feature_importance():
+    if not model:
+        return jsonify({'error': 'Model not loaded'}), 500
+    
+    importance = model.feature_importances_
+    idx = sorted(range(len(importance)), key=lambda i: importance[i], reverse=True)
+    
+    return jsonify({
+        'features': [features[i] for i in idx],
+        'importance': [float(importance[i]) for i in idx]
+    })
+```
+
+**Plotly Visualization:**
+
+```javascript app.py
+async function loadFeatureImportance() {
+    var res = await fetch('/api/feature_importance');
+    var data = await res.json();
+    
+    Plotly.newPlot('featureChart', [{
+        x: data.importance.slice(0,15),
+        y: data.features.slice(0,15),
+        type: 'bar',
+        orientation: 'h',
+        marker: { color: '#667eea' }
+    }], {
+        title: 'Top 15 Features for Predicting Winners',
+        xaxis: { title: 'Importance Score' },
+        yaxis: { automargin: true },
+        height: 600,
+        margin: { l: 200 }
+    });
+}
+```
+
+### 5. Driver Comparison Tab
+
+Head-to-head driver statistics:
+
+**API Endpoint:**
+
+```python app.py
+@app.route('/api/compare')
+def compare():
+    d1 = request.args.get('driver1','VER')
+    d2 = request.args.get('driver2','HAM')
+    
+    try:
+        with open('./data/driver_comparison.json','r') as f:
+            stats = json.load(f)
+    except:
+        return jsonify({'error':'Run driver_stats_real.py first'}), 500
+    
+    s1 = stats.get(d1, stats['VER'])
+    s2 = stats.get(d2, stats['HAM'])
+    
+    cats = ['Wins','Podiums','Poles','Championships','Wet Wins','Street Wins']
+    d1v = [s1['wins'], s1['podiums'], s1['poles'], 
+           s1['championships'], s1['wet_wins'], s1['street_wins']]
+    d2v = [s2['wins'], s2['podiums'], s2['poles'],
+           s2['championships'], s2['wet_wins'], s2['street_wins']]
+    
+    return jsonify({
+        'driver1_name': s1['name'],
+        'driver2_name': s2['name'],
+        'driver1_team': s1['team'],
+        'driver2_team': s2['team'],
+        'driver1_stats': d1v,
+        'driver2_stats': d2v,
+        'categories': cats,
+        'better_driver': s1['name'] if s1['wins'] > s2['wins'] else s2['name']
+    })
+```
+
+**Frontend Visualization:**
+
+```javascript app.py
+async function compareDrivers() {
+    var d1 = document.getElementById('driver1').value;
+    var d2 = document.getElementById('driver2').value;
+    var res = await fetch('/api/compare?driver1='+d1+'&driver2='+d2);
+    var data = await res.json();
+    
+    Plotly.newPlot('comparisonChart', [
+        {
+            x: data.categories,
+            y: data.driver1_stats,
+            name: data.driver1_name + ' (' + data.driver1_team + ')',
+            type: 'bar',
+            marker: { color: '#667eea' }
+        },
+        {
+            x: data.categories,
+            y: data.driver2_stats,
+            name: data.driver2_name + ' (' + data.driver2_team + ')',
+            type: 'bar',
+            marker: { color: '#e74c3c' }
+        }
+    ], {
+        title: data.driver1_name + ' vs ' + data.driver2_name,
+        barmode: 'group',
+        height: 420
+    });
+}
+```
+
+### 6. 2026 Season Prediction Tab
+
+Full championship simulation:
+
+**API Endpoint:**
+
+```python app.py
+@app.route('/api/season_2026')
+def season_2026():
+    try:
+        with open('./data/2026_prediction.json', 'r') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except:
+        return jsonify({
+            'error': 'No 2026 predictions found. Run season_2026_calendar.py first!'
+        })
+```
+
+**Data Structure:**
+
+```json
+{
+  "champion": {
+    "code": "VER",
+    "name": "Max Verstappen",
+    "team": "Red Bull",
+    "points": 487,
+    "wins": 15,
+    "podiums": 20,
+    "dnfs": 1
+  },
+  "standings": [
+    {"name": "Max Verstappen", "team": "Red Bull", "points": 487, "wins": 15},
+    {"name": "Lando Norris", "team": "McLaren", "points": 398, "wins": 5},
+    ...
+  ],
+  "race_results": [
+    {
+      "round": 1,
+      "race": "Bahrain Grand Prix",
+      "weather": "DRY",
+      "winner": "Max Verstappen",
+      "p2": "Lando Norris",
+      "p3": "Charles Leclerc",
+      "dnfs": 2
+    },
+    ...
+  ]
+}
+```
+
+### 7. Lap-by-Lap Race Simulation
+
+Interactive full race simulation:
+
+**API Endpoint:**
+
+```python app.py
+@app.route('/api/lap_race')
+def lap_race():
+    from race_engine import simulate_race
+    
+    weather = request.args.get('weather', 'DRY')
+    circuit = request.args.get('circuit', 'STANDARD')
+    
+    result = simulate_race(weather=weather, circuit=circuit)
+    return jsonify(result)
+```
+
+**Frontend Control:**
+
+```javascript app.py
+async function runLapRace() {
+    var weather = document.getElementById('raceWeather').value;
+    var circuit = document.getElementById('raceCircuit').value;
+    
+    document.getElementById('lapRaceLoading').style.display = 'block';
+    document.getElementById('lapRaceResult').style.display = 'none';
+    
+    var res = await fetch('/api/lap_race?weather='+weather+'&circuit='+circuit);
+    var data = await res.json();
+    
+    lastRaceData = data;
+    document.getElementById('lapRaceLoading').style.display = 'none';
+    document.getElementById('lapRaceResult').style.display = 'block';
+    
+    renderPodium(data);
+    showRaceView('results');
+}
+```
+
+**Result Rendering:**
+
+```javascript app.py
+function renderPodium(data) {
+    var scStr = data.sc_deployments.length > 0 ? 
+        ' | SC: ' + data.sc_deployments.length + ' time(s)' : 
+        ' | No safety cars';
+    
+    var html = 
+        '<div style="padding:20px;background:linear-gradient(135deg,#1a1a2e,#16213e);' +
+        'border-radius:12px;color:white;margin-bottom:15px">' +
+        '<h3 style="font-size:1.8em;margin:0">🏆 ' + data.winner + '</h3>' +
+        '<p>Weather: ' + data.weather_history[0][1] + scStr + '</p>' +
+        '<p>DNFs: ' + data.dnf_count + ' | Fastest Lap: ' + 
+        data.fastest_lap.driver + ' (' + data.fastest_lap.time + 's)</p>' +
+        '</div>';
+    
+    document.getElementById('podiumDisplay').innerHTML = html;
+}
+```
+
+## Styling and UI
+
+The dashboard uses a modern gradient design:
+
+```css app.py
+body {
+    font-family: Arial;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    min-height: 100vh;
+}
+
+.header {
+    text-align: center;
+    color: white;
+    margin-bottom: 30px;
+}
+
+.header h1 {
+    font-size: 3em;
+    margin-bottom: 10px;
+}
+
+.tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.tab {
+    background: rgba(255,255,255,0.2);
+    color: white;
+    padding: 15px 25px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.tab:hover, .tab.active {
+    background: white;
+    color: #667eea;
+}
+
+.content {
+    background: white;
+    padding: 30px;
+    border-radius: 15px;
+    min-height: 500px;
+}
+```
+
+## Running in Production
+
+For production deployment:
+
+```bash
+# Install production server
+pip install gunicorn
+
+# Run with gunicorn
+gunicorn -w 4 -b 0.0.0.0:5000 app:app
+```
+
+**Docker Deployment:**
+
+```dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+EXPOSE 5000
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app:app"]
+```
+
+<Warning>
+  In production, disable Flask's debug mode and use a production WSGI server like Gunicorn or uWSGI.
+</Warning>
+
+## API Reference
+
+### Prediction Endpoints
+
+| Endpoint | Method | Parameters | Returns |
+|----------|--------|------------|----------|
+| `/api/predict_v2` | GET | grid, weather, tire, circuit | Probability, prediction, insights |
+| `/api/feature_importance` | GET | None | Features and importance scores |
+| `/api/compare` | GET | driver1, driver2 | Driver comparison stats |
+| `/api/season_2026` | GET | None | Full season predictions |
+| `/api/lap_race` | GET | weather, circuit | Complete race simulation |
+
+### Response Formats
+
+All endpoints return JSON with appropriate status codes:
+- `200`: Success
+- `500`: Model not loaded or internal error
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Training Models" icon="brain" href="/guides/training-models">
+    Learn how to train and update the ML models
+  </Card>
+  <Card title="Race Simulation" icon="flag-checkered" href="/guides/race-simulation">
+    Deep dive into the race simulation engine
+  </Card>
+</CardGroup>

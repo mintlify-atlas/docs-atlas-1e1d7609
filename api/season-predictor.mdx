@@ -1,0 +1,568 @@
+---
+title: Season Predictor API
+description: Full season championship prediction with driver statistics and race-by-race forecasting
+---
+
+## Overview
+
+The Season Predictor simulates a complete 24-race Formula 1 season with realistic driver performance, team dynamics, circuit-specific advantages, and championship points calculations.
+
+## Core Function
+
+### `predict_full_season()`
+
+Simulates the entire 2026 F1 season with 24 races and calculates final championship standings.
+
+```python
+from season_2026_calendar import predict_full_season
+
+season_results = predict_full_season()
+```
+
+**No parameters required** - uses internal randomness with controlled variance for realistic results.
+
+## Response Structure
+
+<ResponseField name="champion" type="object">
+  Championship winner details
+  
+  <Expandable title="properties">
+    <ResponseField name="code" type="string">
+      Three-letter driver code
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Full driver name
+    </ResponseField>
+    <ResponseField name="team" type="string">
+      Team name
+    </ResponseField>
+    <ResponseField name="points" type="integer">
+      Total championship points
+    </ResponseField>
+    <ResponseField name="wins" type="integer">
+      Number of race wins
+    </ResponseField>
+    <ResponseField name="podiums" type="integer">
+      Number of podium finishes
+    </ResponseField>
+    <ResponseField name="dnfs" type="integer">
+      Number of DNFs (retirements)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="standings" type="array">
+  Complete championship standings (all 10 drivers)
+  
+  <Expandable title="Driver Standing Object">
+    <ResponseField name="code" type="string">
+      Driver code
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Full name
+    </ResponseField>
+    <ResponseField name="team" type="string">
+      Team name
+    </ResponseField>
+    <ResponseField name="points" type="integer">
+      Total points
+    </ResponseField>
+    <ResponseField name="wins" type="integer">
+      Race wins
+    </ResponseField>
+    <ResponseField name="podiums" type="integer">
+      Podium finishes
+    </ResponseField>
+    <ResponseField name="dnfs" type="integer">
+      Retirements
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="race_results" type="array">
+  Results for all 24 races
+  
+  <Expandable title="Race Result Object">
+    <ResponseField name="round" type="integer">
+      Race number (1-24)
+    </ResponseField>
+    <ResponseField name="race" type="string">
+      Grand Prix name
+    </ResponseField>
+    <ResponseField name="weather" type="string">
+      Weather condition (DRY, LIGHT_RAIN, HEAVY_RAIN)
+    </ResponseField>
+    <ResponseField name="winner" type="string">
+      Winner's full name
+    </ResponseField>
+    <ResponseField name="winner_team" type="string">
+      Winner's team
+    </ResponseField>
+    <ResponseField name="p2" type="string">
+      Second place driver
+    </ResponseField>
+    <ResponseField name="p3" type="string">
+      Third place driver
+    </ResponseField>
+    <ResponseField name="dnfs" type="integer">
+      Number of retirements
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Response
+
+<CodeGroup>
+```json Season Prediction
+{
+  "champion": {
+    "code": "VER",
+    "name": "Max Verstappen",
+    "team": "Red Bull",
+    "points": 412,
+    "wins": 14,
+    "podiums": 19,
+    "dnfs": 1
+  },
+  "standings": [
+    {
+      "code": "VER",
+      "name": "Max Verstappen",
+      "team": "Red Bull",
+      "points": 412,
+      "wins": 14,
+      "podiums": 19,
+      "dnfs": 1
+    },
+    {
+      "code": "NOR",
+      "name": "Lando Norris",
+      "team": "McLaren",
+      "points": 368,
+      "wins": 6,
+      "podiums": 16,
+      "dnfs": 0
+    },
+    {
+      "code": "LEC",
+      "name": "Charles Leclerc",
+      "team": "Ferrari",
+      "points": 351,
+      "wins": 3,
+      "podiums": 15,
+      "dnfs": 2
+    }
+  ],
+  "race_results": [
+    {
+      "round": 1,
+      "race": "Bahrain Grand Prix",
+      "weather": "DRY",
+      "winner": "Max Verstappen",
+      "winner_team": "Red Bull",
+      "p2": "Lando Norris",
+      "p3": "Charles Leclerc",
+      "dnfs": 0
+    }
+  ]
+}
+```
+</CodeGroup>
+
+## 2026 Season Calendar
+
+24 races across 9 months with circuit type classifications:
+
+```python
+SEASON_2026 = [
+    {'round': 1,  'race': 'Bahrain Grand Prix',          'circuit': 'DESERT',    'country': 'Bahrain'},
+    {'round': 2,  'race': 'Saudi Arabian Grand Prix',    'circuit': 'STREET',    'country': 'Saudi Arabia'},
+    {'round': 3,  'race': 'Australian Grand Prix',       'circuit': 'STREET',    'country': 'Australia'},
+    {'round': 4,  'race': 'Japanese Grand Prix',         'circuit': 'TECHNICAL', 'country': 'Japan'},
+    {'round': 5,  'race': 'Chinese Grand Prix',          'circuit': 'STANDARD',  'country': 'China'},
+    {'round': 6,  'race': 'Miami Grand Prix',            'circuit': 'STREET',    'country': 'USA'},
+    {'round': 7,  'race': 'Emilia Romagna Grand Prix',   'circuit': 'TECHNICAL', 'country': 'Italy'},
+    {'round': 8,  'race': 'Monaco Grand Prix',           'circuit': 'STREET',    'country': 'Monaco'},
+    {'round': 9,  'race': 'Spanish Grand Prix',          'circuit': 'TECHNICAL', 'country': 'Spain'},
+    {'round': 10, 'race': 'Canadian Grand Prix',         'circuit': 'STANDARD',  'country': 'Canada'},
+    {'round': 11, 'race': 'Austrian Grand Prix',         'circuit': 'FAST',      'country': 'Austria'},
+    {'round': 12, 'race': 'British Grand Prix',          'circuit': 'FAST',      'country': 'UK'},
+    {'round': 13, 'race': 'Hungarian Grand Prix',        'circuit': 'TECHNICAL', 'country': 'Hungary'},
+    {'round': 14, 'race': 'Belgian Grand Prix',          'circuit': 'FAST',      'country': 'Belgium'},
+    {'round': 15, 'race': 'Dutch Grand Prix',            'circuit': 'TECHNICAL', 'country': 'Netherlands'},
+    {'round': 16, 'race': 'Italian Grand Prix',          'circuit': 'FAST',      'country': 'Italy'},
+    {'round': 17, 'race': 'Azerbaijan Grand Prix',       'circuit': 'STREET',    'country': 'Azerbaijan'},
+    {'round': 18, 'race': 'Singapore Grand Prix',        'circuit': 'STREET',    'country': 'Singapore'},
+    {'round': 19, 'race': 'United States Grand Prix',    'circuit': 'STANDARD',  'country': 'USA'},
+    {'round': 20, 'race': 'Mexico City Grand Prix',      'circuit': 'STANDARD',  'country': 'Mexico'},
+    {'round': 21, 'race': 'São Paulo Grand Prix',        'circuit': 'STANDARD',  'country': 'Brazil'},
+    {'round': 22, 'race': 'Las Vegas Grand Prix',        'circuit': 'STREET',    'country': 'USA'},
+    {'round': 23, 'race': 'Qatar Grand Prix',            'circuit': 'DESERT',    'country': 'Qatar'},
+    {'round': 24, 'race': 'Abu Dhabi Grand Prix',        'circuit': 'DESERT',    'country': 'UAE'}
+]
+```
+
+## Driver Stats
+
+Complete 2026 driver lineup with performance attributes:
+
+```python
+DRIVERS_2026 = {
+    'VER': {
+        'name': 'Max Verstappen',
+        'team': 'Red Bull',
+        'skill': 0.94,
+        'wet_skill': 0.93,
+        'street_skill': 0.86,
+        'avg_pos': 1.8
+    },
+    'NOR': {
+        'name': 'Lando Norris',
+        'team': 'McLaren',
+        'skill': 0.93,
+        'wet_skill': 0.90,
+        'street_skill': 0.89,
+        'avg_pos': 3.0
+    },
+    'LEC': {
+        'name': 'Charles Leclerc',
+        'team': 'Ferrari',
+        'skill': 0.93,
+        'wet_skill': 0.88,
+        'street_skill': 0.96,  # Street circuit specialist
+        'avg_pos': 3.2
+    },
+    'HAM': {
+        'name': 'Lewis Hamilton',
+        'team': 'Ferrari',
+        'skill': 0.92,
+        'wet_skill': 0.97,  # Legendary in wet conditions
+        'street_skill': 0.91,
+        'avg_pos': 3.5
+    },
+    'PIA': {
+        'name': 'Oscar Piastri',
+        'team': 'McLaren',
+        'skill': 0.90,
+        'wet_skill': 0.86,
+        'street_skill': 0.88,
+        'avg_pos': 4.0
+    },
+    'RUS': {
+        'name': 'George Russell',
+        'team': 'Mercedes',
+        'skill': 0.88,
+        'wet_skill': 0.89,
+        'street_skill': 0.86,
+        'avg_pos': 4.2
+    },
+    'SAI': {
+        'name': 'Carlos Sainz',
+        'team': 'Williams',
+        'skill': 0.87,
+        'wet_skill': 0.86,
+        'street_skill': 0.88,
+        'avg_pos': 4.5
+    },
+    'ALO': {
+        'name': 'Fernando Alonso',
+        'team': 'Aston Martin',
+        'skill': 0.86,
+        'wet_skill': 0.92,
+        'street_skill': 0.89,
+        'avg_pos': 5.0
+    },
+    'PER': {
+        'name': 'Sergio Perez',
+        'team': 'Red Bull',
+        'skill': 0.82,
+        'wet_skill': 0.80,
+        'street_skill': 0.85,
+        'avg_pos': 5.5
+    },
+    'GAS': {
+        'name': 'Pierre Gasly',
+        'team': 'Alpine',
+        'skill': 0.78,
+        'wet_skill': 0.77,
+        'street_skill': 0.80,
+        'avg_pos': 8.0
+    }
+}
+```
+
+## Team Performance
+
+Constructor car performance ratings:
+
+```python
+TEAM_PERFORMANCE_2026 = {
+    'Red Bull':      0.94,
+    'McLaren':       0.94,
+    'Ferrari':       0.93,
+    'Mercedes':      0.89,
+    'Aston Martin':  0.83,
+    'Williams':      0.80,
+    'Alpine':        0.76
+}
+```
+
+## Circuit Specialists
+
+Drivers with specific circuit advantages:
+
+```python
+CIRCUIT_SPECIALIST = {
+    'STREET': {
+        'LEC': 0.05,  # Leclerc dominates street circuits
+        'ALO': 0.04,
+        'PER': 0.03,
+        'SAI': 0.02
+    },
+    'FAST': {
+        'VER': 0.04,
+        'HAM': 0.03,
+        'RUS': 0.02
+    },
+    'TECHNICAL': {
+        'VER': 0.03,
+        'LEC': 0.02,
+        'HAM': 0.02
+    },
+    'DESERT': {
+        'VER': 0.03,
+        'NOR': 0.02
+    },
+    'STANDARD': {}  # No bonuses
+}
+```
+
+## Points System
+
+FIA Formula 1 points distribution:
+
+```python
+POINTS = [
+    25,  # P1
+    18,  # P2
+    15,  # P3
+    12,  # P4
+    10,  # P5
+    8,   # P6
+    6,   # P7
+    4,   # P8
+    2,   # P9
+    1,   # P10
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0  # P11-P20
+]
+```
+
+## Simulation Logic
+
+### Qualifying Simulation
+
+```python
+def simulate_qualifying(race_info, weather):
+    """
+    Determines grid positions based on:
+    - Driver skill (wet_skill if raining)
+    - Team car performance
+    - Circuit specialist bonuses
+    - Random variation (±0.06)
+    """
+    for driver in DRIVERS_2026:
+        skill = driver['skill']
+        if weather != 'DRY':
+            skill = (skill + driver['wet_skill']) / 2
+        
+        team_boost = TEAM_PERFORMANCE_2026[driver['team']]
+        circuit_bonus = CIRCUIT_SPECIALIST[race_info['circuit']].get(code, 0)
+        luck = np.random.normal(0, 0.06)
+        
+        quali_score = skill * team_boost + circuit_bonus + luck
+```
+
+### Race Simulation
+
+```python
+def simulate_race(race_info, grid_positions, weather):
+    """
+    Simulates race result considering:
+    - Starting grid position
+    - Driver race skill
+    - Weather conditions (60% weight on wet_skill in rain)
+    - Team car performance
+    - Circuit specialist bonuses
+    - Grid position penalty (0.008 per position)
+    - Race luck/strategy variance (±0.09)
+    - DNF probability (5% per driver)
+    """
+    for driver in DRIVERS_2026:
+        skill = driver['skill']
+        if weather != 'DRY':
+            skill = (skill * 0.4) + (driver['wet_skill'] * 0.6)
+        
+        grid_penalty = grid * 0.008
+        race_luck = np.random.normal(0, 0.09)
+        dnf = np.random.random() < 0.05
+```
+
+## Weather Distribution
+
+Realistic weather probabilities:
+
+```python
+weather = np.random.choice(
+    ['DRY', 'LIGHT_RAIN', 'HEAVY_RAIN'],
+    p=[0.72, 0.20, 0.08]  # 72% dry, 20% light rain, 8% heavy rain
+)
+```
+
+## Championship Forecasting
+
+### Key Factors
+
+<ParamField path="Driver Skill" type="float">
+  Base performance level (0.78-0.94)
+</ParamField>
+
+<ParamField path="Team Performance" type="float">
+  Car competitiveness multiplier (0.76-0.94)
+</ParamField>
+
+<ParamField path="Wet Weather Ability" type="float">
+  Performance in rain (0.77-0.97)
+  
+  Hamilton has legendary 0.97 rating
+</ParamField>
+
+<ParamField path="Circuit Specialization" type="float">
+  Bonus on specific track types (0.02-0.05)
+  
+  Leclerc gets +0.05 on street circuits
+</ParamField>
+
+<ParamField path="Grid Position Effect" type="float">
+  Penalty for starting further back (0.008 per position)
+</ParamField>
+
+<ParamField path="Race Variance" type="float">
+  Strategy, luck, and incident randomness (σ=0.09)
+</ParamField>
+
+<ParamField path="DNF Rate" type="float">
+  Retirement probability (5% per driver per race)
+</ParamField>
+
+## Usage Examples
+
+<CodeGroup>
+```python Full Season Prediction
+from season_2026_calendar import predict_full_season
+
+season = predict_full_season()
+
+print(f"Champion: {season['champion']['name']}")
+print(f"Points: {season['champion']['points']}")
+print(f"Wins: {season['champion']['wins']}")
+
+print("\nTop 5 Standings:")
+for i, driver in enumerate(season['standings'][:5], 1):
+    print(f"{i}. {driver['name']}: {driver['points']} pts")
+```
+
+```python Race-by-Race Analysis
+season = predict_full_season()
+
+for race in season['race_results']:
+    print(f"Round {race['round']}: {race['race']}")
+    print(f"  Winner: {race['winner']} ({race['winner_team']})")
+    print(f"  Weather: {race['weather']}")
+    print(f"  DNFs: {race['dnfs']}\n")
+```
+
+```python Championship Battle
+season = predict_full_season()
+
+champion = season['standings'][0]
+runner_up = season['standings'][1]
+
+margin = champion['points'] - runner_up['points']
+print(f"Championship Margin: {margin} points")
+print(f"{champion['name']} vs {runner_up['name']}")
+print(f"Head-to-head wins: {champion['wins']} - {runner_up['wins']}")
+```
+
+```python Team Performance
+season = predict_full_season()
+
+team_points = {}
+for driver in season['standings']:
+    team = driver['team']
+    team_points[team] = team_points.get(team, 0) + driver['points']
+
+print("Constructors Championship:")
+for team, pts in sorted(team_points.items(), key=lambda x: x[1], reverse=True):
+    print(f"{team}: {pts} points")
+```
+</CodeGroup>
+
+## Real Driver Career Statistics
+
+Historical performance data used for skill calibration:
+
+### Top Drivers
+
+<Expandable title="Max Verstappen (VER)">
+  - **Championships:** 4 (2021-2024)
+  - **Career Wins:** 63 / 206 races (30.6%)
+  - **Podiums:** 111 (53.9%)
+  - **Pole Positions:** 40
+  - **Best Season:** 19 wins in 2023
+  - **Career Points:** 3,014.5 (14.6 avg/race)
+</Expandable>
+
+<Expandable title="Lewis Hamilton (HAM)">
+  - **Championships:** 7 (2008, 2014-2015, 2017-2020)
+  - **Career Wins:** 104 / 350 races (29.7%)
+  - **Podiums:** 201 (57.4%)
+  - **Pole Positions:** 104 (record)
+  - **Wet Weather Wins:** 12 (legendary)
+  - **Career Points:** 4,891.5 (14.0 avg/race)
+</Expandable>
+
+<Expandable title="Charles Leclerc (LEC)">
+  - **Career Wins:** 8 / 140 races (5.7%)
+  - **Podiums:** 42 (30.0%)
+  - **Pole Positions:** 24
+  - **Street Circuit Wins:** 4 (Monaco specialist)
+  - **Career Points:** 1,447 (10.3 avg/race)
+</Expandable>
+
+<Expandable title="Lando Norris (NOR)">
+  - **Career Wins:** 4 / 123 races (3.3%)
+  - **Podiums:** 28 (22.8%)
+  - **Pole Positions:** 7
+  - **Best Season:** 4 wins in 2024
+  - **Career Points:** 1,002 (8.1 avg/race)
+</Expandable>
+
+## Output Files
+
+Prediction saves to `./data/2026_prediction.json`:
+
+```json
+{
+  "champion": {...},
+  "standings": [...],
+  "race_results": [...]
+}
+```
+
+## Performance Notes
+
+- **Execution Time:** ~2-3 seconds for full season
+- **Randomness:** Controlled variance for realistic unpredictability
+- **Weather Impact:** ~28% of races have precipitation
+- **DNF Rate:** Average 1-2 retirements per race
+- **Typical Championship:** Winner has 400-450 points with 12-16 wins

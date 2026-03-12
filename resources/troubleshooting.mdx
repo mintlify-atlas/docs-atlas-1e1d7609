@@ -1,0 +1,691 @@
+---
+title: 'Troubleshooting'
+description: 'Common issues, solutions, debugging tips, and FAQ for the F1 ML Prediction System'
+icon: 'wrench'
+---
+
+## Common Issues
+
+Quick solutions to the most frequently encountered problems.
+
+<AccordionGroup>
+  <Accordion title="Module not found errors" icon="box">
+    **Symptom:**
+    ```bash
+    ModuleNotFoundError: No module named 'fastf1'
+    ModuleNotFoundError: No module named 'sklearn'
+    ```
+    
+    **Cause:** Python packages not installed or wrong environment activated
+    
+    **Solution:**
+    
+    <Steps>
+      <Step title="Verify virtual environment is activated">
+        ```bash
+        # Check if venv is active (you should see (venv) in prompt)
+        
+        # Windows
+        venv\Scripts\activate
+        
+        # Mac/Linux
+        source venv/bin/activate
+        ```
+      </Step>
+      
+      <Step title="Install all dependencies">
+        ```bash
+        pip install -r requirements.txt
+        ```
+      </Step>
+      
+      <Step title="Verify installation">
+        ```bash
+        pip list | grep fastf1
+        pip list | grep scikit-learn
+        pip list | grep xgboost
+        ```
+      </Step>
+    </Steps>
+    
+    <Tip>
+    If you're still getting errors, try reinstalling with:
+    
+    ```bash
+    pip install --upgrade --force-reinstall -r requirements.txt
+    ```
+    </Tip>
+  </Accordion>
+  
+  <Accordion title="Models not found when starting Flask" icon="file-slash">
+    **Symptom:**
+    ```bash
+    FileNotFoundError: [Errno 2] No such file or directory: './models/saved_models/winner_predictor_rf.pkl'
+    ```
+    
+    **Cause:** Models haven't been trained yet
+    
+    **Solution:**
+    
+    <Steps>
+      <Step title="Check if data exists">
+        ```bash
+        ls data/raw/
+        # Should see: race_results.csv, lap_times.csv, pit_stops.csv, weather.csv
+        ```
+        
+        If files are missing, collect data first:
+        ```bash
+        python src/data/f1_data_collector.py
+        ```
+      </Step>
+      
+      <Step title="Train the models">
+        ```bash
+        python train_all_models.py
+        ```
+        
+        This will:
+        - Run feature engineering
+        - Train Random Forest model
+        - Train XGBoost model
+        - Save models to `models/saved_models/`
+        
+        Expected duration: 5-10 minutes
+      </Step>
+      
+      <Step title="Verify model files exist">
+        ```bash
+        ls models/saved_models/
+        # Should see:
+        # winner_predictor_rf.pkl
+        # winner_predictor_xgb.pkl
+        # feature_columns.pkl
+        ```
+      </Step>
+    </Steps>
+  </Accordion>
+  
+  <Accordion title="Low model accuracy" icon="chart-line-down">
+    **Symptom:** Model test accuracy below 70%
+    
+    **Possible Causes:**
+    - Insufficient training data
+    - Poor feature engineering
+    - Overfitting or underfitting
+    - Data quality issues
+    
+    **Solutions:**
+    
+    <Tabs>
+      <Tab title="Collect More Data">
+        Add more recent seasons to training data:
+        
+        ```bash
+        # Update data collection to include 2025
+        python src/data/f1_data_collector.py --years 2018-2025
+        ```
+        
+        More data → Better generalization
+      </Tab>
+      
+      <Tab title="Add More Features">
+        Enhance feature engineering:
+        
+        ```python
+        # In feature_engineering.py, add:
+        
+        # Qualifying pace
+        features['QualiPace'] = df['QualifyingTime'] / df['BestQualifyingTime']
+        
+        # Teammate comparison
+        features['TeammateGap'] = df['Position'] - df['TeammatePosition']
+        
+        # Track specialization
+        features['CircuitWinRate'] = df.groupby(['Driver', 'Circuit'])['IsWinner'].transform('mean')
+        ```
+      </Tab>
+      
+      <Tab title="Try Different Models">
+        Experiment with other algorithms:
+        
+        ```python
+        # Neural Network
+        from tensorflow.keras.models import Sequential
+        from tensorflow.keras.layers import Dense, Dropout
+        
+        model = Sequential([
+            Dense(128, activation='relu', input_shape=(n_features,)),
+            Dropout(0.3),
+            Dense(64, activation='relu'),
+            Dropout(0.2),
+            Dense(32, activation='relu'),
+            Dense(1, activation='sigmoid')
+        ])
+        
+        # LightGBM
+        from lightgbm import LGBMClassifier
+        model = LGBMClassifier(n_estimators=200, learning_rate=0.05)
+        ```
+      </Tab>
+      
+      <Tab title="Hyperparameter Tuning">
+        Use GridSearchCV to optimize:
+        
+        ```python
+        from sklearn.model_selection import GridSearchCV
+        
+        param_grid = {
+            'n_estimators': [50, 100, 200],
+            'max_depth': [5, 10, 15, 20],
+            'min_samples_split': [5, 10, 20]
+        }
+        
+        grid_search = GridSearchCV(
+            RandomForestClassifier(),
+            param_grid,
+            cv=5,
+            scoring='accuracy'
+        )
+        
+        grid_search.fit(X_train, y_train)
+        best_model = grid_search.best_estimator_
+        ```
+      </Tab>
+    </Tabs>
+  </Accordion>
+  
+  <Accordion title="Flask won't start - port already in use" icon="plug">
+    **Symptom:**
+    ```bash
+    OSError: [Errno 48] Address already in use
+    ```
+    
+    **Cause:** Another process is using port 5000
+    
+    **Solution:**
+    
+    <Tabs>
+      <Tab title="Kill Existing Process">
+        **Mac/Linux:**
+        ```bash
+        # Find process using port 5000
+        lsof -i :5000
+        
+        # Kill the process (replace PID with actual process ID)
+        kill -9 <PID>
+        ```
+        
+        **Windows:**
+        ```bash
+        # Find process
+        netstat -ano | findstr :5000
+        
+        # Kill process (replace PID with actual ID)
+        taskkill /PID <PID> /F
+        ```
+      </Tab>
+      
+      <Tab title="Use Different Port">
+        Modify the Flask app to use a different port:
+        
+        ```python
+        # In app.py, change the last line:
+        if __name__ == '__main__':
+            app.run(debug=True, port=8080)  # Use port 8080 instead
+        ```
+        
+        Or use command line argument:
+        ```bash
+        python src/app.py --port 8080
+        ```
+      </Tab>
+    </Tabs>
+  </Accordion>
+  
+  <Accordion title="FastF1 data collection timeout" icon="clock">
+    **Symptom:**
+    ```bash
+    TimeoutError: Failed to fetch session data
+    ConnectionError: Remote end closed connection
+    ```
+    
+    **Cause:** Internet connection issues or FastF1 API rate limiting
+    
+    **Solution:**
+    
+    <Steps>
+      <Step title="Check internet connection">
+        Ensure stable connection and try again
+      </Step>
+      
+      <Step title="Add retry logic">
+        ```python
+        import time
+        from requests.exceptions import ConnectionError
+        
+        def fetch_session_with_retry(year, round, session_type, max_retries=3):
+            for attempt in range(max_retries):
+                try:
+                    session = fastf1.get_session(year, round, session_type)
+                    session.load()
+                    return session
+                except (ConnectionError, TimeoutError) as e:
+                    print(f"Attempt {attempt + 1} failed: {e}")
+                    time.sleep(5)  # Wait 5 seconds before retry
+            raise Exception(f"Failed after {max_retries} attempts")
+        ```
+      </Step>
+      
+      <Step title="Enable caching">
+        ```python
+        import fastf1
+        fastf1.Cache.enable_cache('data/f1_cache/')  # Cache successful requests
+        ```
+        
+        Cached data will be reused on subsequent runs.
+      </Step>
+    </Steps>
+    
+    <Warning>
+    FastF1 API sometimes has rate limits. If you encounter frequent timeouts, add delays between requests:
+    
+    ```python
+    import time
+    for year in range(2018, 2025):
+        for round in range(1, 25):
+            # ... fetch data ...
+            time.sleep(2)  # Wait 2 seconds between requests
+    ```
+    </Warning>
+  </Accordion>
+</AccordionGroup>
+
+## Data Issues
+
+<AccordionGroup>
+  <Accordion title="Missing or incomplete data" icon="database">
+    **Symptom:** CSV files have fewer rows than expected or missing columns
+    
+    **Debugging:**
+    
+    ```python
+    import pandas as pd
+    
+    # Check data completeness
+    df = pd.read_csv('data/raw/race_results.csv')
+    
+    print(f"Total rows: {len(df)}")
+    print(f"Missing values:\n{df.isnull().sum()}")
+    print(f"Date range: {df['Year'].min()} - {df['Year'].max()}")
+    ```
+    
+    **Solutions:**
+    
+    <Tabs>
+      <Tab title="Re-collect Data">
+        ```bash
+        # Delete existing data and re-collect
+        rm data/raw/*.csv
+        python src/data/f1_data_collector.py
+        ```
+      </Tab>
+      
+      <Tab title="Fill Missing Values">
+        ```python
+        # Numerical: fill with median
+        df['AvgAirTemp'].fillna(df['AvgAirTemp'].median(), inplace=True)
+        
+        # Categorical: fill with mode
+        df['Team'].fillna(df['Team'].mode()[0], inplace=True)
+        
+        # Forward fill for time series
+        df['LapTime'].fillna(method='ffill', inplace=True)
+        ```
+      </Tab>
+    </Tabs>
+  </Accordion>
+  
+  <Accordion title="Data type errors" icon="exclamation-triangle">
+    **Symptom:**
+    ```python
+    TypeError: unsupported operand type(s) for +: 'str' and 'float'
+    ```
+    
+    **Cause:** Columns are wrong data type (string instead of numeric)
+    
+    **Solution:**
+    
+    ```python
+    # Convert to correct types
+    df['GridPosition'] = pd.to_numeric(df['GridPosition'], errors='coerce')
+    df['Points'] = df['Points'].astype(float)
+    df['Year'] = df['Year'].astype(int)
+    df['IsRaining'] = df['IsRaining'].astype(bool)
+    
+    # Check types
+    print(df.dtypes)
+    ```
+  </Accordion>
+  
+  <Accordion title="Duplicate rows in dataset" icon="clone">
+    **Symptom:** More rows than expected, duplicate driver-race combinations
+    
+    **Check for duplicates:**
+    ```python
+    # Find duplicates
+    duplicates = df[df.duplicated(['Year', 'Round', 'Driver'], keep=False)]
+    print(f"Found {len(duplicates)} duplicate rows")
+    
+    # Remove duplicates (keep first occurrence)
+    df = df.drop_duplicates(['Year', 'Round', 'Driver'], keep='first')
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Performance Issues
+
+<AccordionGroup>
+  <Accordion title="Model training is too slow" icon="hourglass">
+    **Symptom:** Training takes 30+ minutes
+    
+    **Solutions:**
+    
+    <Tabs>
+      <Tab title="Reduce Data Size">
+        ```python
+        # Sample training data
+        df_sample = df.sample(frac=0.5, random_state=42)  # Use 50% of data
+        
+        # Or use only recent years
+        df_recent = df[df['Year'] >= 2020]
+        ```
+      </Tab>
+      
+      <Tab title="Optimize Hyperparameters">
+        ```python
+        # Reduce model complexity
+        RandomForestClassifier(
+            n_estimators=50,      # Fewer trees (was 100)
+            max_depth=8,          # Shallower trees (was 10)
+            n_jobs=-1             # Use all CPU cores
+        )
+        ```
+      </Tab>
+      
+      <Tab title="Feature Selection">
+        ```python
+        from sklearn.feature_selection import SelectKBest, f_classif
+        
+        # Keep only top 10 features
+        selector = SelectKBest(f_classif, k=10)
+        X_selected = selector.fit_transform(X_train, y_train)
+        
+        # Get selected feature names
+        selected_features = X_train.columns[selector.get_support()]
+        ```
+      </Tab>
+    </Tabs>
+  </Accordion>
+  
+  <Accordion title="Web dashboard is slow to load" icon="spinner">
+    **Symptom:** Dashboard takes 10+ seconds to render predictions
+    
+    **Solutions:**
+    
+    1. **Cache model predictions:**
+       ```python
+       from functools import lru_cache
+       
+       @lru_cache(maxsize=100)
+       def predict_cached(grid, weather, tire):
+           return model.predict(...)
+       ```
+    
+    2. **Optimize data loading:**
+       ```python
+       # Load only necessary columns
+       df = pd.read_csv('data.csv', usecols=['Year', 'Driver', 'Position'])
+       
+       # Use more efficient data types
+       df['Year'] = df['Year'].astype('int16')  # Instead of int64
+       ```
+    
+    3. **Reduce plot complexity:**
+       ```python
+       # Limit to top 10 drivers in charts
+       top_drivers = df.nlargest(10, 'Points')
+       ```
+  </Accordion>
+</AccordionGroup>
+
+## Debugging Tips
+
+<Tabs>
+  <Tab title="Enable Debug Mode">
+    Get detailed error messages:
+    
+    ```python
+    # In app.py
+    if __name__ == '__main__':
+        app.run(debug=True)  # Shows stack traces
+    ```
+    
+    For training scripts:
+    ```python
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+    ```
+  </Tab>
+  
+  <Tab title="Check Data at Each Step">
+    Add checkpoints to validate data:
+    
+    ```python
+    # After loading data
+    print(f"Loaded {len(df)} rows")
+    print(df.head())
+    print(df.info())
+    
+    # After feature engineering
+    print(f"Created {len(features.columns)} features")
+    print(features.describe())
+    
+    # After train/test split
+    print(f"Train: {len(X_train)}, Test: {len(X_test)}")
+    ```
+  </Tab>
+  
+  <Tab title="Inspect Model Predictions">
+    Understand what the model is predicting:
+    
+    ```python
+    # Get prediction probabilities
+    y_pred_proba = model.predict_proba(X_test)
+    
+    # Show predictions vs actual
+    results = pd.DataFrame({
+        'Actual': y_test,
+        'Predicted': y_pred,
+        'Probability': y_pred_proba[:, 1]
+    })
+    
+    # Find confident wrong predictions
+    wrong = results[(results['Actual'] != results['Predicted']) & 
+                    (results['Probability'] > 0.8)]
+    print(wrong)
+    ```
+  </Tab>
+  
+  <Tab title="Validate Feature Importance">
+    Ensure features make sense:
+    
+    ```python
+    # Get feature importance
+    importance = pd.DataFrame({
+        'feature': feature_names,
+        'importance': model.feature_importances_
+    }).sort_values('importance', ascending=False)
+    
+    print(importance.head(10))
+    
+    # Check for unexpected importance
+    # GridPosition should be high
+    # Random noise features should be low
+    ```
+  </Tab>
+</Tabs>
+
+## Frequently Asked Questions
+
+<AccordionGroup>
+  <Accordion title="Why is accuracy lower on recent races?" icon="question">
+    **Answer:** Models are trained on historical data (2018-2023). Recent regulatory changes, new drivers, or team performance shifts may not be fully captured.
+    
+    **Solution:** Retrain models with latest data:
+    ```bash
+    python src/data/f1_data_collector.py  # Get 2024/2025 data
+    python train_all_models.py            # Retrain
+    ```
+  </Accordion>
+  
+  <Accordion title="Can I use this for betting?" icon="money-bill">
+    **Answer:** While the model achieves 75-80% accuracy, it's designed for educational purposes. Betting involves risk beyond prediction accuracy.
+    
+    <Warning>
+    **Disclaimer:** This is an educational project. Do not use predictions for gambling or financial decisions. Past performance does not guarantee future results.
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="How do I add 2025/2026 data?" icon="calendar-plus">
+    **Answer:** The FastF1 API updates automatically with new race data.
+    
+    ```python
+    # In f1_data_collector.py, update year range:
+    for year in range(2018, 2026):  # Include 2025 races
+        # ... collection code ...
+    ```
+    
+    Then retrain models with updated data.
+  </Accordion>
+  
+  <Accordion title="Can I predict specific drivers?" icon="user">
+    **Answer:** Yes! The web dashboard allows driver-specific predictions, or use the API:
+    
+    ```python
+    from src.models.winner_predictor import WinnerPredictor
+    
+    predictor = WinnerPredictor()
+    predictor.load_models('models/saved_models/')
+    
+    # Predict for Verstappen starting P1 in dry conditions
+    features = {
+        'GridPosition': 1,
+        'Driver_TotalWins': 52,
+        'Team_AvgPosition': 1.8,
+        'Weather': 'DRY'
+        # ... other features ...
+    }
+    
+    result = predictor.predict_race(pd.DataFrame([features]))
+    print(f"Win probability: {result['ensemble_probability']:.2%}")
+    ```
+  </Accordion>
+  
+  <Accordion title="What Python version is required?" icon="code">
+    **Answer:** Python 3.8 or higher is required.
+    
+    ```bash
+    # Check your version
+    python --version
+    
+    # If too old, install Python 3.8+
+    # Then create new virtual environment
+    python3.8 -m venv venv
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Error Messages Reference
+
+<Tabs>
+  <Tab title="Import Errors">
+    | Error | Cause | Solution |
+    |-------|-------|----------|
+    | `No module named 'fastf1'` | Package not installed | `pip install fastf1` |
+    | `No module named 'sklearn'` | Package not installed | `pip install scikit-learn` |
+    | `No module named 'xgboost'` | Package not installed | `pip install xgboost` |
+    | `Cannot import name 'Sequential'` | TensorFlow not installed | `pip install tensorflow` |
+  </Tab>
+  
+  <Tab title="File Errors">
+    | Error | Cause | Solution |
+    |-------|-------|----------|
+    | `FileNotFoundError: race_results.csv` | Data not collected | Run data collector script |
+    | `FileNotFoundError: winner_predictor_rf.pkl` | Models not trained | Run `train_all_models.py` |
+    | `PermissionError` | File locked by another program | Close other programs accessing file |
+  </Tab>
+  
+  <Tab title="Data Errors">
+    | Error | Cause | Solution |
+    |-------|-------|----------|
+    | `ValueError: could not convert string to float` | Wrong data type | Convert columns with `pd.to_numeric()` |
+    | `KeyError: 'GridPosition'` | Column missing | Check CSV has required columns |
+    | `IndexError: list index out of range` | Empty dataframe | Verify data was loaded correctly |
+  </Tab>
+  
+  <Tab title="Model Errors">
+    | Error | Cause | Solution |
+    |-------|-------|----------|
+    | `ValueError: Found input variables with inconsistent numbers of samples` | X and y length mismatch | Check `len(X_train) == len(y_train)` |
+    | `ValueError: could not convert string to float: 'NaN'` | Missing values in features | Fill NaN with `fillna()` |
+    | `AttributeError: 'NoneType' object has no attribute 'predict'` | Model not loaded | Load model with `joblib.load()` |
+  </Tab>
+</Tabs>
+
+## Getting Help
+
+<CardGroup cols={2}>
+  <Card title="Check Documentation" icon="book">
+    Review the complete documentation:
+    - Installation guide
+    - API reference
+    - Model architecture
+  </Card>
+  
+  <Card title="GitHub Issues" icon="github">
+    Search existing issues or create new one:
+    - Provide error messages
+    - Include Python/package versions
+    - Describe steps to reproduce
+  </Card>
+  
+  <Card title="Debug Logs" icon="file-lines">
+    Enable detailed logging:
+    
+    ```python
+    import logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        filename='debug.log'
+    )
+    ```
+  </Card>
+  
+  <Card title="Community Support" icon="users">
+    Join discussions:
+    - Share your issue
+    - Learn from others
+    - Contribute solutions
+  </Card>
+</CardGroup>
+
+<Tip>
+**Pro Tip:** Before asking for help, try:
+
+1. Check error message carefully
+2. Search this troubleshooting guide
+3. Google the exact error message
+4. Check GitHub issues
+5. Enable debug mode for detailed logs
+</Tip>

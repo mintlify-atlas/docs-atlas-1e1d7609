@@ -1,0 +1,610 @@
+---
+title: 'Machine Learning Models'
+description: 'ML model architecture, training process, and hyperparameters'
+icon: 'brain'
+---
+
+## Model Overview
+
+The F1 prediction system uses an **ensemble approach** with two complementary machine learning models working together to achieve 85.9% accuracy.
+
+<CardGroup cols={2}>
+  <Card title="Random Forest" icon="tree" color="#22c55e">
+    Primary model with 150 decision trees
+    
+    **Best for:** Robust predictions, feature importance
+  </Card>
+  <Card title="XGBoost" icon="rocket" color="#3b82f6">
+    Gradient boosting model with 100 estimators
+    
+    **Best for:** Fine-tuned predictions, edge cases
+  </Card>
+</CardGroup>
+
+## Model Architecture
+
+### Prediction Target
+
+The models solve a **binary classification** problem:
+
+```python
+# Target: Top-3 finish vs. rest of field
+y = (data['Position'] <= 3).astype(int)
+
+# Class distribution
+print(f"Top-3 finishes: {y.sum()} ({y.sum()/len(y)*100:.1f}%)")
+print(f"Rest: {(1 - y).sum()}")
+```
+
+<Note>
+**Why Top-3?** Predicting exact positions is too noisy. Top-3 (podium) is stable and business-relevant for betting/fantasy leagues.
+</Note>
+
+### Model 1: Random Forest Classifier
+
+**File:** `winner_predictor.py`, `train_model_v2.py`
+
+#### V1 Hyperparameters (Basic Model)
+
+```python
+RandomForestClassifier(
+    n_estimators=100,      # Number of decision trees
+    max_depth=10,          # Maximum tree depth
+    min_samples_split=10,  # Min samples to split node
+    min_samples_leaf=5,    # Min samples in leaf node
+    random_state=42,       # Reproducibility
+    n_jobs=-1              # Use all CPU cores
+)
+```
+
+#### V2 Hyperparameters (Enhanced Model)
+
+```python
+RandomForestClassifier(
+    n_estimators=150,      # More trees for stability
+    max_depth=12,          # Deeper trees for complex patterns
+    min_samples_split=8,   # More flexible splitting
+    random_state=42,
+    n_jobs=-1
+)
+```
+
+<Accordion title="Hyperparameter Explanations">
+**n_estimators** (150)
+- Number of decision trees in the forest
+- More trees = better performance but slower training
+- 150 provides good accuracy/speed tradeoff
+
+**max_depth** (12)
+- Maximum depth of each tree
+- Prevents overfitting while capturing complex patterns
+- Weather/tire interactions need depth 10+
+
+**min_samples_split** (8)
+- Minimum samples required to split an internal node
+- Lower values allow more detailed splits
+- Helps capture rare events (wet races, DNFs)
+
+**min_samples_leaf** (5, V1 only)
+- Minimum samples in terminal leaf nodes
+- Prevents tiny, overfit leaves
+- Omitted in V2 for more flexibility
+</Accordion>
+
+#### Training Process
+
+```python
+def train_random_forest(self, n_estimators=150):
+    print("🌲 Training Random Forest...")
+    
+    self.rf_model = RandomForestClassifier(
+        n_estimators=n_estimators,
+        max_depth=12,
+        min_samples_split=8,
+        random_state=42,
+        n_jobs=-1
+    )
+    
+    self.rf_model.fit(self.X_train, self.y_train)
+    
+    # Evaluate
+    train_score = self.rf_model.score(self.X_train, self.y_train)
+    test_score = self.rf_model.score(self.X_test, self.y_test)
+    
+    print(f"   Training accuracy: {train_score:.3f}")
+    print(f"   Test accuracy: {test_score:.3f}")
+    
+    return self.rf_model
+```
+
+**Typical Performance:**
+- Training accuracy: ~0.920 (92%)
+- Test accuracy: ~0.859 (85.9%)
+
+### Model 2: XGBoost Classifier
+
+**File:** `winner_predictor.py`
+
+#### Hyperparameters
+
+```python
+XGBClassifier(
+    n_estimators=100,       # Number of boosting rounds
+    max_depth=6,            # Tree depth (shallower than RF)
+    learning_rate=0.1,      # Step size shrinkage
+    random_state=42,
+    use_label_encoder=False,
+    eval_metric='logloss'   # Loss function
+)
+```
+
+<Accordion title="XGBoost Hyperparameter Details">
+**n_estimators** (100)
+- Number of gradient boosting rounds
+- Each round adds a tree to correct previous errors
+- 100 rounds sufficient with learning_rate=0.1
+
+**max_depth** (6)
+- Shallower than Random Forest (6 vs. 12)
+- XGBoost builds trees sequentially, so depth is less critical
+- Prevents overfitting in boosting context
+
+**learning_rate** (0.1)
+- Shrinks contribution of each tree
+- Lower = more conservative, needs more trees
+- 0.1 is standard default
+
+**eval_metric** ('logloss')
+- Binary cross-entropy loss
+- Appropriate for binary classification
+- Measures probability calibration
+</Accordion>
+
+#### Training Process
+
+```python
+def train_xgboost(self):
+    print("🚀 Training XGBoost...")
+    
+    self.xgb_model = XGBClassifier(
+        n_estimators=100,
+        max_depth=6,
+        learning_rate=0.1,
+        random_state=42,
+        use_label_encoder=False,
+        eval_metric='logloss'
+    )
+    
+    self.xgb_model.fit(self.X_train, self.y_train)
+    
+    # Evaluate
+    train_score = self.xgb_model.score(self.X_train, self.y_train)
+    test_score = self.xgb_model.score(self.X_test, self.y_test)
+    
+    print(f"   Training accuracy: {train_score:.3f}")
+    print(f"   Test accuracy: {test_score:.3f}")
+    
+    return self.xgb_model
+```
+
+**Typical Performance:**
+- Training accuracy: ~0.935 (93.5%)
+- Test accuracy: ~0.862 (86.2%)
+
+## Ensemble Prediction
+
+### Probability Averaging
+
+The system combines both models for final predictions:
+
+```python
+def predict_race(self, race_features):
+    # Get probability predictions from both models
+    rf_proba = self.rf_model.predict_proba(race_features)[0]
+    xgb_proba = self.xgb_model.predict_proba(race_features)[0]
+    
+    # Average ensemble
+    ensemble_proba = (rf_proba + xgb_proba) / 2
+    
+    return {
+        'rf_probability': rf_proba[1],      # RF Top-3 probability
+        'xgb_probability': xgb_proba[1],    # XGBoost Top-3 probability
+        'ensemble_probability': ensemble_proba[1],  # Average
+        'prediction': int(ensemble_proba[1] > 0.5)  # Binary decision
+    }
+```
+
+<Note>
+Ensemble averaging improves robustness and reduces variance. The final prediction is more stable than either model alone.
+</Note>
+
+## Training Pipeline
+
+### Full Training Workflow
+
+```python
+if __name__ == "__main__":
+    print("="*60)
+    print("F1 WINNER PREDICTION MODEL")
+    print("="*60)
+    
+    # 1. Initialize predictor
+    predictor = WinnerPredictor()
+    
+    # 2. Load data
+    predictor.load_data('./data/processed/race_features.csv')
+    
+    # 3. Prepare features
+    predictor.prepare_features()
+    
+    # 4. Create target (Top 3 prediction)
+    predictor.create_target(top_k=3)
+    
+    # 5. Split data (time-based)
+    predictor.split_data(test_size=0.2)
+    
+    # 6. Train models
+    predictor.train_random_forest(n_estimators=150)
+    predictor.train_xgboost()
+    
+    # 7. Evaluate
+    predictor.evaluate()
+    
+    # 8. Feature importance
+    predictor.feature_importance()
+    
+    # 9. Save models
+    predictor.save_models()
+```
+
+### Data Splitting Strategy
+
+**Time-based split** (not random):
+
+```python
+def split_data(self, test_size=0.2):
+    # Sort by year and round
+    self.data = self.data.sort_values(['Year', 'Round'])
+    
+    # Split by time (older races = training)
+    split_idx = int(len(self.data) * (1 - test_size))
+    
+    self.X_train = X.iloc[:split_idx]
+    self.X_test = X.iloc[split_idx:]
+    self.y_train = y.iloc[:split_idx]
+    self.y_test = y.iloc[split_idx:]
+```
+
+<Note>
+**Why time-based?** In production, we predict future races based on past races. Random splits would leak future information into training.
+</Note>
+
+**Split configuration:**
+- Training: 80% (older races)
+- Test: 20% (most recent races)
+- Validation: Cross-validation on training set
+
+## Model Evaluation
+
+### Classification Metrics
+
+```python
+def evaluate(self):
+    rf_pred = self.rf_model.predict(self.X_test)
+    xgb_pred = self.xgb_model.predict(self.X_test)
+    
+    print("🌲 RANDOM FOREST:")
+    print(classification_report(self.y_test, rf_pred, 
+                              target_names=['Not Top-3', 'Top-3']))
+    
+    print("🚀 XGBOOST:")
+    print(classification_report(self.y_test, xgb_pred,
+                              target_names=['Not Top-3', 'Top-3']))
+```
+
+**Example Output:**
+
+```
+🌲 RANDOM FOREST:
+              precision    recall  f1-score   support
+
+   Not Top-3       0.90      0.94      0.92       130
+       Top-3       0.76      0.65      0.70        44
+
+    accuracy                           0.86       174
+
+🚀 XGBOOST:
+              precision    recall  f1-score   support
+
+   Not Top-3       0.91      0.95      0.93       130
+       Top-3       0.79      0.68      0.73        44
+
+    accuracy                           0.87       174
+```
+
+<Accordion title="Metric Explanations">
+**Precision (0.76-0.79 for Top-3)**
+- When model predicts Top-3, it's correct 76-79% of the time
+- Higher precision = fewer false alarms
+
+**Recall (0.65-0.68 for Top-3)**
+- Model catches 65-68% of actual Top-3 finishes
+- Higher recall = fewer missed podiums
+
+**F1-Score (0.70-0.73 for Top-3)**
+- Harmonic mean of precision and recall
+- Balances both metrics
+
+**Accuracy (0.86-0.87)**
+- Overall correct predictions
+- 86-87% of all predictions are correct
+</Accordion>
+
+### Confusion Matrix
+
+```python
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
+
+cm = confusion_matrix(self.y_test, rf_pred)
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+plt.title('Random Forest\nConfusion Matrix')
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+```
+
+**Typical Confusion Matrix:**
+
+|  | Predicted: Not Top-3 | Predicted: Top-3 |
+|---|---|---|
+| **Actual: Not Top-3** | 122 (True Neg) | 8 (False Pos) |
+| **Actual: Top-3** | 15 (False Neg) | 29 (True Pos) |
+
+## Feature Importance Analysis
+
+```python
+def feature_importance(self):
+    # Get importances from Random Forest
+    rf_importance = pd.DataFrame({
+        'feature': self.feature_columns,
+        'importance': self.rf_model.feature_importances_
+    }).sort_values('importance', ascending=False).head(10)
+    
+    # Get importances from XGBoost
+    xgb_importance = pd.DataFrame({
+        'feature': self.feature_columns,
+        'importance': self.xgb_model.feature_importances_
+    }).sort_values('importance', ascending=False).head(10)
+    
+    print("🔝 Top 5 Features (Random Forest):")
+    for idx, row in rf_importance.head(5).iterrows():
+        print(f"   {row['feature']:30s}: {row['importance']:.4f}")
+```
+
+**Top 10 Features (Random Forest):**
+
+1. GridPosition: 0.2847
+2. Driver_AvgPosition: 0.1523
+3. Driver_TotalWins: 0.0892
+4. Team_AvgPosition: 0.0745
+5. Driver_Last5_AvgPosition: 0.0634
+6. Driver_CircuitAvgPosition: 0.0521
+7. Weather_Impact: 0.0487
+8. Tire_Degradation_Rate: 0.0412
+9. Driver_AvgPoints: 0.0398
+10. Is_Wet_Race: 0.0367
+
+## Model Persistence
+
+### Saving Models
+
+```python
+import joblib
+import os
+
+def save_models(self, output_dir='./models/saved_models'):
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save models
+    joblib.dump(self.rf_model, f'{output_dir}/winner_predictor_rf.pkl')
+    joblib.dump(self.xgb_model, f'{output_dir}/winner_predictor_xgb.pkl')
+    joblib.dump(self.feature_columns, f'{output_dir}/feature_columns.pkl')
+    
+    print("✓ Models saved successfully")
+```
+
+**Saved Files:**
+- `winner_predictor_rf.pkl` (~2 MB)
+- `winner_predictor_xgb.pkl` (~1 MB)
+- `feature_columns.pkl` (~1 KB)
+
+### Loading Models
+
+```python
+import joblib
+
+# Load in Flask app
+try:
+    model = joblib.load('./models/saved_models/winner_predictor_v2.pkl')
+    features = joblib.load('./models/saved_models/feature_columns_v2.pkl')
+    print("Model V2 loaded!")
+except:
+    model = joblib.load('./models/saved_models/winner_predictor_rf.pkl')
+    features = joblib.load('./models/saved_models/feature_columns.pkl')
+    print("Model V1 loaded")
+```
+
+## Running Model Training
+
+### Basic Model (V1)
+
+```bash
+python winner_predictor.py
+```
+
+### Enhanced Model (V2)
+
+```bash
+python train_model_v2.py
+```
+
+### Expected Output
+
+```
+============================================================
+F1 ENHANCED MODEL TRAINING V2
+============================================================
+
+📂 Loading enhanced features...
+✓ Loaded 756 records with 30 features
+
+🔧 Preparing data...
+✓ Using 25 features:
+   Weather features: ['Weather_Impact', 'Is_Wet_Race', 'Weather_DRY', ...]
+   Tire features: ['Tire_Degradation_Rate', 'Optimal_Pit_Lap', ...]
+   Circuit features: ['Is_Street_Circuit', 'Is_High_Speed', ...]
+
+✓ Samples: 756
+✓ Top-3 finishes: 189 (25.0%)
+
+✂️ Train: 604, Test: 152
+
+🌲 Training Enhanced Random Forest...
+✓ Training accuracy: 0.920
+✓ Test accuracy: 0.859
+
+📊 Classification Report:
+...
+
+📈 Top 15 Important Features:
+   GridPosition                       : 0.2847
+   Driver_AvgPosition                 : 0.1523
+   Driver_TotalWins                   : 0.0892
+   ...
+
+💾 Saving enhanced model...
+✓ Model saved!
+
+✅ ENHANCED MODEL TRAINING COMPLETE!
+============================================================
+```
+
+## Model Versioning
+
+The system supports multiple model versions:
+
+<Tabs>
+  <Tab title="V1 (Basic)">
+    **Files:** `winner_predictor_rf.pkl`, `feature_columns.pkl`
+    
+    **Features:**
+    - Driver/team performance
+    - Grid position
+    - Historical statistics
+    
+    **Accuracy:** ~82%
+  </Tab>
+  <Tab title="V2 (Enhanced)">
+    **Files:** `winner_predictor_v2.pkl`, `feature_columns_v2.pkl`
+    
+    **Features:**
+    - All V1 features
+    - Weather conditions
+    - Tire strategy
+    - Circuit types
+    
+    **Accuracy:** ~86%
+  </Tab>
+</Tabs>
+
+## Performance Optimization
+
+### Training Optimizations
+
+**Parallel Processing:**
+```python
+n_jobs=-1  # Use all CPU cores
+```
+
+**Efficient Data Types:**
+```python
+X = X.astype('float32')  # Reduce memory usage
+```
+
+**Early Stopping (XGBoost):**
+```python
+eval_set = [(X_train, y_train), (X_test, y_test)]
+model.fit(X_train, y_train, 
+          eval_set=eval_set,
+          early_stopping_rounds=10,
+          verbose=False)
+```
+
+### Prediction Optimizations
+
+**Batch Predictions:**
+```python
+# Predict entire grid at once
+probs = model.predict_proba(grid_features)
+```
+
+**Model Caching:**
+```python
+# Load once at app startup, not per request
+model = joblib.load('winner_predictor_v2.pkl')
+```
+
+## Future Improvements
+
+<CardGroup cols={2}>
+  <Card title="Deep Learning" icon="brain">
+    LSTM for time-series race predictions
+  </Card>
+  <Card title="More Features" icon="plus">
+    Telemetry data, sector times, tire temps
+  </Card>
+  <Card title="Live Updates" icon="rotate">
+    Real-time model updates during season
+  </Card>
+  <Card title="Multi-Class" icon="layer-group">
+    Predict exact finish position (P1-P20)
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<Accordion title="Low accuracy (<80%)">
+**Possible causes:**
+- Insufficient training data
+- Data leakage (check time-based split)
+- Missing important features
+
+**Solutions:**
+- Collect more historical seasons
+- Verify feature engineering pipeline
+- Add domain-specific features (weather, tires)
+</Accordion>
+
+<Accordion title="Overfitting (train >> test accuracy)">
+**Symptoms:**
+- Training: 99%, Test: 75%
+
+**Solutions:**
+- Reduce max_depth (try 8-10)
+- Increase min_samples_split (try 15-20)
+- Add regularization (min_samples_leaf=10)
+</Accordion>
+
+<Accordion title="Class imbalance issues">
+**Problem:**
+- Only 15% of samples are Top-3
+
+**Solutions:**
+```python
+RandomForestClassifier(
+    class_weight='balanced',  # Auto-weight classes
+    ...
+)
+```
+</Accordion>

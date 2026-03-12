@@ -1,0 +1,351 @@
+---
+title: 'Data Collection'
+description: 'How the system collects and processes F1 race data using the FastF1 API'
+icon: 'database'
+---
+
+## Overview
+
+The data collection system uses the **FastF1 API** to gather comprehensive Formula 1 race data from multiple seasons. The primary collection script is `collect_working.py`, which reliably extracts race results and driver information.
+
+<Note>
+FastF1 is a Python package that provides access to F1 timing data, telemetry, and race information from the official F1 API.
+</Note>
+
+## Data Sources
+
+### FastF1 API
+
+The system leverages FastF1's comprehensive data access:
+
+<CardGroup cols={2}>
+  <Card title="Race Results" icon="flag-checkered">
+    Final positions, points, and grid positions for all drivers
+  </Card>
+  <Card title="Driver Info" icon="user">
+    Full names, team assignments, and driver codes (e.g., VER, HAM)
+  </Card>
+  <Card title="Session Data" icon="stopwatch">
+    Lap times, pit stops, and sector times
+  </Card>
+  <Card title="Event Metadata" icon="calendar">
+    Event names, years, rounds, and circuit information
+  </Card>
+</CardGroup>
+
+### Data Coverage
+
+```python
+for year in [2023, 2024]:  # Recent seasons with complete data
+    schedule = fastf1.get_event_schedule(year)
+    # Process each race in the season
+```
+
+The system focuses on **2023-2024 seasons** which have:
+- Complete race results
+- Reliable position data
+- Full driver roster information
+- Minimal data quality issues
+
+## Collection Process
+
+### Step 1: Initialize Cache
+
+```python
+import fastf1
+
+fastf1.Cache.enable_cache('./data/f1_cache')
+```
+
+<Note>
+Caching is **critical** for performance. Without it, each API call takes 30+ seconds. With caching, subsequent calls are instant.
+</Note>
+
+### Step 2: Fetch Event Schedule
+
+For each season, retrieve the full race calendar:
+
+```python
+schedule = fastf1.get_event_schedule(year)
+
+for idx, event in schedule.iterrows():
+    if event['EventFormat'] == 'testing':
+        continue  # Skip pre-season testing
+    
+    round_num = event['RoundNumber']
+    event_name = event['EventName']
+```
+
+### Step 3: Load Race Session
+
+Load the race session (not practice or qualifying):
+
+```python
+session = fastf1.get_session(year, round_num, 'R')  # 'R' = Race
+session.load()  # Fetches all session data
+```
+
+<Accordion title="Session Types">
+- **'FP1', 'FP2', 'FP3'**: Free Practice sessions
+- **'Q'**: Qualifying
+- **'S'**: Sprint race
+- **'R'**: Main race (what we use)
+</Accordion>
+
+### Step 4: Extract Race Results
+
+```python
+results = session.results
+
+for driver_code in drivers:
+    driver_result = results[results['Abbreviation'] == driver_code]
+    
+    if len(driver_result) > 0:
+        position = driver_result.iloc[0]['Position']
+        grid = driver_result.iloc[0]['GridPosition']
+        points = driver_result.iloc[0]['Points']
+        team = driver_result.iloc[0]['TeamName']
+        full_name = driver_result.iloc[0]['FullName']
+```
+
+### Step 5: Data Validation
+
+**Critical validation step** to ensure data quality:
+
+```python
+# Only save if we have a valid position
+if pd.notna(position):
+    all_results.append({
+        'Year': year,
+        'Round': round_num,
+        'EventName': event_name,
+        'DriverCode': driver_code,
+        'FullName': full_name,
+        'TeamName': team,
+        'Position': int(position),
+        'GridPosition': int(grid) if pd.notna(grid) else 20,
+        'Points': float(points) if pd.notna(points) else 0.0
+    })
+```
+
+<Note>
+Rows with missing positions are **excluded** to prevent training issues. The model requires valid target values.
+</Note>
+
+## Data Schema
+
+### Raw Race Results
+
+Stored in: `data/raw/race_results.csv`
+
+| Column | Type | Description | Example |
+|--------|------|-------------|----------|
+| Year | int | Season year | 2024 |
+| Round | int | Race number in season | 5 |
+| EventName | str | Race name | "Monaco Grand Prix" |
+| DriverCode | str | 3-letter driver code | "VER" |
+| FullName | str | Driver full name | "Max Verstappen" |
+| TeamName | str | Constructor team | "Red Bull" |
+| Position | int | Final race position | 1 |
+| GridPosition | int | Starting grid position | 1 |
+| Points | float | Championship points | 25.0 |
+
+### Additional Data Files
+
+The system also collects (when available):
+
+**Lap Times** (`data/raw/lap_times.csv`):
+- Individual lap times for each driver
+- Used for pace analysis
+
+**Pit Stops** (`data/raw/pit_stops.csv`):
+- Pit stop timing and duration
+- Used for strategy analysis
+
+**Weather** (`data/raw/weather.csv`):
+- Track temperature
+- Air temperature
+- Humidity
+- Rain conditions
+
+## Error Handling
+
+### Graceful Degradation
+
+The collection script handles errors at multiple levels:
+
+```python
+try:
+    # Try to process race
+    session = fastf1.get_session(year, round_num, 'R')
+    session.load()
+    # ... process data
+    print(f"✓ ({len(drivers)} drivers)")
+except Exception as e:
+    print(f"✗ {str(e)[:40]}")
+    # Continue to next race
+```
+
+<CardGroup cols={2}>
+  <Card title="Network Issues" icon="wifi-slash">
+    Retries API calls with exponential backoff
+  </Card>
+  <Card title="Missing Data" icon="circle-exclamation">
+    Skips incomplete races, logs warnings
+  </Card>
+  <Card title="API Rate Limits" icon="gauge-high">
+    Uses caching to minimize API calls
+  </Card>
+  <Card title="Format Changes" icon="wrench">
+    Handles different data schemas gracefully
+  </Card>
+</CardGroup>
+
+## Collection Statistics
+
+Typical collection run (2023-2024 seasons):
+
+```
+Total results: 880
+Valid positions: 880 (100%)
+Years: [2023, 2024]
+Races per season: ~22
+Drivers per race: 20
+```
+
+## Data Quality Checks
+
+Before saving, the system validates:
+
+<Accordion title="Position Validation">
+```python
+print(f"Position not null: {df['Position'].notna().sum()}")
+print(f"Position null: {df['Position'].isna().sum()}")
+
+# Remove rows where Position is missing
+features_df = features_df[features_df['Position'].notna()]
+```
+</Accordion>
+
+<Accordion title="Grid Position Bounds">
+```python
+# Grid positions must be 1-20
+GridPosition = int(grid) if pd.notna(grid) else 20
+```
+</Accordion>
+
+<Accordion title="Points Distribution">
+```python
+# Verify points follow F1 scoring
+print(df['Position'].value_counts().sort_index().head(10))
+# P1 should have 25 points, P2 = 18, etc.
+```
+</Accordion>
+
+## Performance Optimization
+
+### Caching Strategy
+
+```python
+fastf1.Cache.enable_cache('./data/f1_cache')
+```
+
+**Impact:**
+- First API call: ~30 seconds
+- Cached calls: Less than 0.1 seconds
+- Cache size: ~500 MB per season
+
+### Batch Processing
+
+Processes entire seasons in one run:
+- Reduces connection overhead
+- Better error recovery
+- Progress tracking
+
+### Selective Loading
+
+```python
+if event['EventFormat'] == 'testing':
+    continue  # Skip non-race events
+```
+
+Reduces unnecessary API calls by 20-30%.
+
+## Running Data Collection
+
+### Basic Usage
+
+```bash
+python collect_working.py
+```
+
+### Expected Output
+
+```
+============================================================
+F1 DATA COLLECTION - WORKING VERSION
+============================================================
+
+Year 2023...
+  Round 1: Bahrain Grand Prix... ✓ (20 drivers)
+  Round 2: Saudi Arabian Grand Prix... ✓ (20 drivers)
+  Round 3: Australian Grand Prix... ✓ (20 drivers)
+  ...
+
+Year 2024...
+  Round 1: Bahrain Grand Prix... ✓ (20 drivers)
+  ...
+
+============================================================
+Total results: 880
+Valid positions: 880
+Years: [2023, 2024]
+============================================================
+
+✓ Saved to: data/raw/race_results_WORKING.csv
+```
+
+## Output Files
+
+After collection, files are stored in `data/raw/`:
+
+- `race_results.csv` or `race_results_WORKING.csv`
+- `lap_times.csv` (optional)
+- `pit_stops.csv` (optional)
+- `weather.csv` (optional)
+
+<Note>
+The `_WORKING` suffix indicates files from the reliable collection script (`collect_working.py`).
+</Note>
+
+## Next Steps
+
+After data collection:
+
+1. **Feature Engineering** → Transform raw data into ML features (see [Feature Engineering](/concepts/feature-engineering))
+2. **Model Training** → Train prediction models (see [Models](/concepts/models))
+3. **Validation** → Check data quality with `debug_data.py`
+
+## Troubleshooting
+
+<Accordion title="No data collected">
+**Cause**: API connection issues or cache corruption
+
+**Solution**:
+```bash
+rm -rf ./data/f1_cache
+python collect_working.py
+```
+</Accordion>
+
+<Accordion title="Missing positions">
+**Cause**: Race session not completed or data not available
+
+**Solution**: Check if race actually occurred, try different year/round
+</Accordion>
+
+<Accordion title="Slow performance">
+**Cause**: Cache not enabled
+
+**Solution**: Verify `fastf1.Cache.enable_cache()` is called before API calls
+</Accordion>

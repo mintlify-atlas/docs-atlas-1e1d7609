@@ -1,0 +1,618 @@
+---
+title: 'Flask API Endpoints'
+description: 'Complete reference for all REST API endpoints in the F1 ML Prediction System'
+---
+
+## Overview
+
+The F1 ML Prediction System exposes 7 REST API endpoints for race predictions, driver comparisons, and race simulations. All endpoints return JSON responses and use GET requests with query parameters.
+
+**Base URL:** `http://localhost:5000`
+
+---
+
+## Winner Prediction V2
+
+<RequestExample>
+```bash GET /api/predict_v2
+curl "http://localhost:5000/api/predict_v2?grid=1&weather=DRY&tire=SOFT&circuit=STANDARD"
+```
+</RequestExample>
+
+Predicts podium finish probability based on grid position, weather conditions, tire compound, and circuit type using the enhanced V2 model.
+
+### Query Parameters
+
+<ParamField query="grid" type="integer" default="1" required>
+  Starting grid position (1-20). Lower numbers indicate better starting positions.
+  - `1` = Pole position
+  - `2-10` = Top 10
+  - `11-20` = Back of grid
+</ParamField>
+
+<ParamField query="weather" type="string" default="DRY" required>
+  Weather conditions for the race.
+  - `DRY` - Sunny/dry conditions
+  - `LIGHT_RAIN` - Light rain
+  - `HEAVY_RAIN` - Heavy rain/storm
+</ParamField>
+
+<ParamField query="tire" type="string" default="MEDIUM" required>
+  Starting tire compound.
+  - `SOFT` - Fast but high degradation (0.08 sec/lap)
+  - `MEDIUM` - Balanced performance (0.05 sec/lap)
+  - `HARD` - Slow but consistent (0.03 sec/lap)
+</ParamField>
+
+<ParamField query="circuit" type="string" default="STANDARD" required>
+  Circuit type/characteristics.
+  - `STANDARD` - Standard racing circuit
+  - `STREET` - Street circuit (Monaco, Singapore)
+  - `FAST` - High-speed circuit (Monza, Spa)
+  - `DESERT` - Desert circuit (Bahrain, Saudi Arabia)
+  - `TECHNICAL` - Technical circuit
+</ParamField>
+
+### Response
+
+<ResponseField name="probability" type="float">
+  Probability of finishing in top 3 (0.0 to 1.0)
+</ResponseField>
+
+<ResponseField name="prediction" type="string">
+  Human-readable prediction result.
+  - `"Top-3 Likely"` if probability > 0.5
+  - `"Top-3 Unlikely"` if probability ≤ 0.5
+</ResponseField>
+
+<ResponseField name="insights" type="string">
+  Contextual insights based on input parameters and predicted probability.
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "probability": 0.8247,
+  "prediction": "Top-3 Likely",
+  "insights": "P1 in dry on soft tires = Excellent podium chances!"
+}
+```
+
+---
+
+## Lap-by-Lap Race Simulation
+
+<RequestExample>
+```bash GET /api/lap_race
+curl "http://localhost:5000/api/lap_race?weather=DRY&circuit=STANDARD"
+```
+</RequestExample>
+
+Simulates a complete 50-lap race with realistic pit stops, tire degradation, safety cars, weather changes, and DNFs.
+
+### Query Parameters
+
+<ParamField query="weather" type="string" default="DRY" required>
+  Starting weather conditions.
+  - `DRY` - Dry conditions
+  - `LIGHT_RAIN` - Light rain
+  - `HEAVY_RAIN` - Heavy rain
+</ParamField>
+
+<ParamField query="circuit" type="string" default="STANDARD" required>
+  Circuit type.
+  - `STANDARD` - Standard circuit
+  - `STREET` - Street circuit
+  - `FAST` - High-speed circuit
+  - `DESERT` - Desert circuit
+</ParamField>
+
+### Response
+
+<ResponseField name="winner" type="string">
+  Name of the race winner
+</ResponseField>
+
+<ResponseField name="results" type="array">
+  Array of driver results (all 20 drivers)
+  
+  <Expandable title="Driver Result Object">
+    <ResponseField name="position" type="integer">
+      Final finishing position (1-20)
+    </ResponseField>
+    
+    <ResponseField name="name" type="string">
+      Driver's full name
+    </ResponseField>
+    
+    <ResponseField name="team" type="string">
+      Team name
+    </ResponseField>
+    
+    <ResponseField name="gap" type="float">
+      Time gap to race winner in seconds
+    </ResponseField>
+    
+    <ResponseField name="dnf" type="boolean">
+      Whether the driver did not finish
+    </ResponseField>
+    
+    <ResponseField name="dnf_lap" type="integer">
+      Lap number where DNF occurred (if applicable)
+    </ResponseField>
+    
+    <ResponseField name="tires_used" type="array">
+      Array of tire compounds used during the race (e.g., ["SOFT", "MEDIUM"])
+    </ResponseField>
+    
+    <ResponseField name="pit_laps" type="array">
+      Array of lap numbers where pit stops occurred
+    </ResponseField>
+    
+    <ResponseField name="laps_led" type="integer">
+      Number of laps spent in first position
+    </ResponseField>
+    
+    <ResponseField name="positions" type="array">
+      Position at each lap (for position chart)
+    </ResponseField>
+    
+    <ResponseField name="color" type="string">
+      Team color hex code for visualizations
+    </ResponseField>
+    
+    <ResponseField name="events" type="array">
+      Array of notable events for this driver (e.g., "Pit stop on L18")
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="dnf_count" type="integer">
+  Total number of DNFs in the race
+</ResponseField>
+
+<ResponseField name="sc_deployments" type="array">
+  Array of lap numbers where safety car was deployed
+</ResponseField>
+
+<ResponseField name="weather_history" type="array">
+  Array of [lap, weather] tuples showing weather changes throughout the race
+</ResponseField>
+
+<ResponseField name="fastest_lap" type="object">
+  <Expandable title="Fastest Lap Object">
+    <ResponseField name="driver" type="string">
+      Driver who set the fastest lap
+    </ResponseField>
+    
+    <ResponseField name="time" type="float">
+      Fastest lap time in seconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "winner": "Max Verstappen",
+  "dnf_count": 2,
+  "sc_deployments": [12, 38],
+  "weather_history": [[1, "DRY"], [25, "LIGHT_RAIN"]],
+  "fastest_lap": {
+    "driver": "Charles Leclerc",
+    "time": 78.452
+  },
+  "results": [
+    {
+      "position": 1,
+      "name": "Max Verstappen",
+      "team": "Red Bull Racing",
+      "gap": 0.0,
+      "dnf": false,
+      "dnf_lap": null,
+      "tires_used": ["SOFT", "MEDIUM"],
+      "pit_laps": [18],
+      "laps_led": 45,
+      "positions": [1, 1, 1],
+      "color": "#1E41FF",
+      "events": ["Pit stop on L18: SOFT → MEDIUM"]
+    }
+  ]
+}
+```
+
+---
+
+## 2026 Season Prediction
+
+<RequestExample>
+```bash GET /api/season_2026
+curl "http://localhost:5000/api/season_2026"
+```
+</RequestExample>
+
+Returns AI-generated predictions for the complete 2026 F1 season including championship standings and all race results.
+
+<Note>
+  This endpoint requires `season_2026_calendar.py` to be run first to generate the prediction data file.
+</Note>
+
+### Query Parameters
+
+None - this endpoint takes no parameters.
+
+### Response
+
+<ResponseField name="standings" type="array">
+  Championship standings for all drivers
+  
+  <Expandable title="Driver Standing Object">
+    <ResponseField name="name" type="string">
+      Driver's full name
+    </ResponseField>
+    
+    <ResponseField name="team" type="string">
+      Team name
+    </ResponseField>
+    
+    <ResponseField name="points" type="integer">
+      Total championship points
+    </ResponseField>
+    
+    <ResponseField name="wins" type="integer">
+      Number of race wins
+    </ResponseField>
+    
+    <ResponseField name="podiums" type="integer">
+      Number of podium finishes
+    </ResponseField>
+    
+    <ResponseField name="dnfs" type="integer">
+      Number of DNFs
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="race_results" type="array">
+  Results for all races in the 2026 season
+  
+  <Expandable title="Race Result Object">
+    <ResponseField name="round" type="integer">
+      Race round number (1-24)
+    </ResponseField>
+    
+    <ResponseField name="race" type="string">
+      Race/Grand Prix name
+    </ResponseField>
+    
+    <ResponseField name="weather" type="string">
+      Weather conditions for the race
+    </ResponseField>
+    
+    <ResponseField name="winner" type="string">
+      Race winner name
+    </ResponseField>
+    
+    <ResponseField name="p2" type="string">
+      Second place driver
+    </ResponseField>
+    
+    <ResponseField name="p3" type="string">
+      Third place driver
+    </ResponseField>
+    
+    <ResponseField name="dnfs" type="integer">
+      Number of DNFs in this race
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "standings": [
+    {
+      "name": "Max Verstappen",
+      "team": "Red Bull Racing",
+      "points": 425,
+      "wins": 15,
+      "podiums": 20,
+      "dnfs": 1
+    }
+  ],
+  "race_results": [
+    {
+      "round": 1,
+      "race": "Bahrain Grand Prix",
+      "weather": "DRY",
+      "winner": "Max Verstappen",
+      "p2": "Lewis Hamilton",
+      "p3": "Charles Leclerc",
+      "dnfs": 2
+    }
+  ]
+}
+```
+
+### Error Response
+
+```json
+{
+  "error": "No 2026 predictions found. Run season_2026_calendar.py first!"
+}
+```
+
+---
+
+## Driver Comparison
+
+<RequestExample>
+```bash GET /api/compare
+curl "http://localhost:5000/api/compare?driver1=VER&driver2=HAM"
+```
+</RequestExample>
+
+Compares career statistics between two F1 drivers.
+
+<Note>
+  This endpoint requires `driver_stats_real.py` to be run first to generate the comparison data.
+</Note>
+
+### Query Parameters
+
+<ParamField query="driver1" type="string" default="VER" required>
+  Three-letter driver code for first driver.
+  
+  Available drivers: VER, LAW, HAM, LEC, NOR, PIA, RUS, ANT, ALO, STR, GAS, DOO, SAI, ALB, OCO, BEA, TSU, HAD, HUL, BOR
+</ParamField>
+
+<ParamField query="driver2" type="string" default="HAM" required>
+  Three-letter driver code for second driver.
+</ParamField>
+
+### Response
+
+<ResponseField name="driver1_name" type="string">
+  First driver's full name
+</ResponseField>
+
+<ResponseField name="driver2_name" type="string">
+  Second driver's full name
+</ResponseField>
+
+<ResponseField name="driver1_team" type="string">
+  First driver's team
+</ResponseField>
+
+<ResponseField name="driver2_team" type="string">
+  Second driver's team
+</ResponseField>
+
+<ResponseField name="categories" type="array">
+  Array of statistic category names: ["Wins", "Podiums", "Poles", "Championships", "Wet Wins", "Street Wins"]
+</ResponseField>
+
+<ResponseField name="driver1_stats" type="array">
+  Array of numeric values for driver 1 corresponding to categories
+</ResponseField>
+
+<ResponseField name="driver2_stats" type="array">
+  Array of numeric values for driver 2 corresponding to categories
+</ResponseField>
+
+<ResponseField name="driver1_races" type="integer">
+  Total career races for driver 1
+</ResponseField>
+
+<ResponseField name="driver2_races" type="integer">
+  Total career races for driver 2
+</ResponseField>
+
+<ResponseField name="driver1_winrate" type="float">
+  Win rate percentage for driver 1
+</ResponseField>
+
+<ResponseField name="driver2_winrate" type="float">
+  Win rate percentage for driver 2
+</ResponseField>
+
+<ResponseField name="driver1_career_pts" type="integer">
+  Career points total for driver 1
+</ResponseField>
+
+<ResponseField name="driver2_career_pts" type="integer">
+  Career points total for driver 2
+</ResponseField>
+
+<ResponseField name="driver1_summary" type="string">
+  Human-readable summary of driver 1's career
+</ResponseField>
+
+<ResponseField name="driver2_summary" type="string">
+  Human-readable summary of driver 2's career
+</ResponseField>
+
+<ResponseField name="better_driver" type="string">
+  Name of driver with more career wins
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "driver1_name": "Max Verstappen",
+  "driver2_name": "Lewis Hamilton",
+  "driver1_team": "Red Bull Racing",
+  "driver2_team": "Ferrari",
+  "categories": ["Wins", "Podiums", "Poles", "Championships", "Wet Wins", "Street Wins"],
+  "driver1_stats": [61, 107, 40, 3, 8, 12],
+  "driver2_stats": [103, 197, 104, 7, 15, 20],
+  "driver1_races": 183,
+  "driver2_races": 334,
+  "driver1_winrate": 33.3,
+  "driver2_winrate": 30.8,
+  "driver1_career_pts": 2586,
+  "driver2_career_pts": 4583,
+  "driver1_summary": "61 wins | 107 podiums | 3 titles | 33.3% win rate",
+  "driver2_summary": "103 wins | 197 podiums | 7 titles | 30.8% win rate",
+  "better_driver": "Lewis Hamilton"
+}
+```
+
+### Error Response
+
+```json
+{
+  "error": "Run driver_stats_real.py first"
+}
+```
+
+---
+
+## Feature Importance
+
+<RequestExample>
+```bash GET /api/feature_importance
+curl "http://localhost:5000/api/feature_importance"
+```
+</RequestExample>
+
+Returns feature importance scores from the machine learning model, showing which factors most influence race predictions.
+
+### Query Parameters
+
+None - this endpoint takes no parameters.
+
+### Response
+
+<ResponseField name="features" type="array">
+  Array of feature names sorted by importance (highest to lowest)
+</ResponseField>
+
+<ResponseField name="importance" type="array">
+  Array of importance scores (0.0 to 1.0) corresponding to features
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "features": [
+    "GridPosition",
+    "Driver_TotalWins",
+    "Weather_Impact",
+    "Tire_Degradation_Rate",
+    "Team_TotalWins",
+    "Circuit_Familiarity",
+    "Driver_AvgPosition",
+    "Is_Wet_Race",
+    "Tire_Advantage",
+    "Is_Street_Circuit"
+  ],
+  "importance": [
+    0.2845,
+    0.1632,
+    0.1289,
+    0.0987,
+    0.0845,
+    0.0723,
+    0.0612,
+    0.0501,
+    0.0398,
+    0.0168
+  ]
+}
+```
+
+---
+
+## Race Simulation
+
+<RequestExample>
+```bash GET /api/simulate_race
+curl "http://localhost:5000/api/simulate_race?weather=DRY"
+```
+</RequestExample>
+
+Simulates a basic race with randomized positions based on weather conditions.
+
+### Query Parameters
+
+<ParamField query="weather" type="string" default="DRY">
+  Weather conditions affecting race randomization.
+  - `DRY` - Standard simulation
+  - `RAIN` - Increased randomization
+</ParamField>
+
+### Response
+
+<ResponseField name="drivers" type="array">
+  Array of driver codes in finishing order (1st to 20th)
+</ResponseField>
+
+<ResponseField name="positions" type="array">
+  Array of position numbers corresponding to drivers
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "drivers": ["VER", "HAM", "LEC", "SAI", "NOR"],
+  "positions": [1, 2, 3, 4, 5]
+}
+```
+
+---
+
+## Championship Simulation
+
+<RequestExample>
+```bash GET /api/simulate_championship
+curl "http://localhost:5000/api/simulate_championship"
+```
+</RequestExample>
+
+Simulates a 5-race championship with points accumulation.
+
+### Query Parameters
+
+None - this endpoint takes no parameters.
+
+### Response
+
+<ResponseField name="standings" type="array">
+  Championship standings after 5 races
+  
+  <Expandable title="Standing Object">
+    <ResponseField name="driver" type="string">
+      Three-letter driver code
+    </ResponseField>
+    
+    <ResponseField name="points" type="integer">
+      Total championship points
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="champion" type="string">
+  Three-letter code of the championship winner
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "standings": [
+    {"driver": "VER", "points": 110},
+    {"driver": "HAM", "points": 85},
+    {"driver": "LEC", "points": 72},
+    {"driver": "SAI", "points": 58},
+    {"driver": "PER", "points": 45}
+  ],
+  "champion": "VER"
+}
+```

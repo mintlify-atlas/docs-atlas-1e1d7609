@@ -1,0 +1,375 @@
+---
+title: 'Data Collector API'
+description: 'FastF1-based data collection for Formula 1 race data'
+---
+
+## Overview
+
+The Data Collector module uses the FastF1 API to fetch historical Formula 1 race data, including race results, driver information, and grid positions. It processes data from multiple seasons and exports it to CSV format for feature engineering and model training.
+
+**Source File**: `collect_working.py`
+
+## FastF1 Integration
+
+### Cache Configuration
+
+The collector uses FastF1's caching mechanism to improve performance and reduce API calls:
+
+```python
+import fastf1
+fastf1.Cache.enable_cache('./data/f1_cache')
+```
+
+<Note>
+Caching is essential for performance. The cache directory stores downloaded session data to avoid repeated API calls.
+</Note>
+
+## Data Collection Pipeline
+
+### Main Collection Loop
+
+The collector iterates through years and race events to gather comprehensive race data:
+
+```python
+all_results = []
+
+for year in [2023, 2024]:
+    schedule = fastf1.get_event_schedule(year)
+    
+    for idx, event in schedule.iterrows():
+        if event['EventFormat'] == 'testing':
+            continue
+        
+        session = fastf1.get_session(year, round_num, 'R')
+        session.load()
+```
+
+## Core Functions
+
+### get_event_schedule()
+
+<ParamField path="year" type="int" required>
+  The Formula 1 season year (e.g., 2023, 2024)
+</ParamField>
+
+**Returns**: DataFrame containing the event schedule with columns:
+- `RoundNumber`: Race round in the season
+- `EventName`: Name of the Grand Prix
+- `EventFormat`: Format type ('conventional', 'testing', 'sprint')
+
+**Example**:
+```python
+schedule = fastf1.get_event_schedule(2024)
+# Returns: DataFrame with all 2024 race events
+```
+
+### get_session()
+
+<ParamField path="year" type="int" required>
+  The Formula 1 season year
+</ParamField>
+
+<ParamField path="round_num" type="int" required>
+  The round number from the event schedule
+</ParamField>
+
+<ParamField path="session_type" type="str" required>
+  Session identifier: 'R' (Race), 'Q' (Qualifying), 'FP1', 'FP2', 'FP3'
+</ParamField>
+
+**Returns**: Session object containing lap data, results, and timing information
+
+**Example**:
+```python
+session = fastf1.get_session(2024, 1, 'R')
+session.load()  # Loads all session data
+laps = session.laps  # Access lap-by-lap data
+```
+
+### get_driver()
+
+<ParamField path="driver_code" type="str" required>
+  Three-letter driver code (e.g., 'VER', 'HAM', 'LEC')
+</ParamField>
+
+**Returns**: Driver information object containing:
+- Driver name
+- Team affiliation
+- Driver number
+
+**Example**:
+```python
+driver_info = session.get_driver('VER')
+# Returns: Driver info for Max Verstappen
+```
+
+## Data Extraction
+
+### Race Results Extraction
+
+The collector extracts detailed race results for each driver:
+
+```python
+results = session.results
+driver_result = results[results['Abbreviation'] == driver_code]
+
+if len(driver_result) > 0:
+    position = driver_result.iloc[0]['Position']
+    grid = driver_result.iloc[0]['GridPosition']
+    points = driver_result.iloc[0]['Points']
+    team = driver_result.iloc[0]['TeamName']
+    full_name = driver_result.iloc[0]['FullName']
+```
+
+### Results DataFrame Fields
+
+<ResponseField name="Position" type="int">
+  Final race finishing position (1-20)
+</ResponseField>
+
+<ResponseField name="GridPosition" type="int">
+  Starting grid position (1-20)
+</ResponseField>
+
+<ResponseField name="Points" type="float">
+  Championship points earned (25 for win, 18 for 2nd, etc.)
+</ResponseField>
+
+<ResponseField name="TeamName" type="str">
+  Constructor/team name (e.g., 'Red Bull Racing', 'Mercedes')
+</ResponseField>
+
+<ResponseField name="FullName" type="str">
+  Driver's full name
+</ResponseField>
+
+<ResponseField name="Abbreviation" type="str">
+  Three-letter driver code
+</ResponseField>
+
+## Data Structure
+
+### Output Record Format
+
+Each race result is stored as a dictionary with the following structure:
+
+```python
+{
+    'Year': 2024,
+    'Round': 1,
+    'EventName': 'Bahrain Grand Prix',
+    'DriverCode': 'VER',
+    'FullName': 'Max Verstappen',
+    'TeamName': 'Red Bull Racing',
+    'Position': 1,
+    'GridPosition': 1,
+    'Points': 25.0
+}
+```
+
+<ResponseField name="Year" type="int">
+  Season year (2023, 2024)
+</ResponseField>
+
+<ResponseField name="Round" type="int">
+  Race round number in the season (1-24)
+</ResponseField>
+
+<ResponseField name="EventName" type="str">
+  Full Grand Prix name
+</ResponseField>
+
+<ResponseField name="DriverCode" type="str">
+  Three-letter driver abbreviation
+</ResponseField>
+
+<ResponseField name="FullName" type="str">
+  Driver's complete name
+</ResponseField>
+
+<ResponseField name="TeamName" type="str">
+  Team/constructor name
+</ResponseField>
+
+<ResponseField name="Position" type="int">
+  Final classification position
+</ResponseField>
+
+<ResponseField name="GridPosition" type="int">
+  Starting position on grid (default: 20 if missing)
+</ResponseField>
+
+<ResponseField name="Points" type="float">
+  Points scored (default: 0.0 if none)
+</ResponseField>
+
+## CSV Output Format
+
+### race_results_WORKING.csv
+
+The collected data is exported to a CSV file with the following structure:
+
+```csv
+Year,Round,EventName,DriverCode,FullName,TeamName,Position,GridPosition,Points
+2024,1,Bahrain Grand Prix,VER,Max Verstappen,Red Bull Racing,1,1,25.0
+2024,1,Bahrain Grand Prix,PER,Sergio Perez,Red Bull Racing,2,2,18.0
+2024,1,Bahrain Grand Prix,SAI,Carlos Sainz,Ferrari,3,3,15.0
+```
+
+<Note>
+The CSV is saved to `./data/raw/race_results_WORKING.csv` and contains results from all processed races.
+</Note>
+
+## Error Handling
+
+### Event-Level Error Handling
+
+The collector implements robust error handling for individual race events:
+
+```python
+try:
+    session = fastf1.get_session(year, round_num, 'R')
+    session.load()
+    # Process session data
+    print(f"✓ ({len(drivers)} drivers)")
+except Exception as e:
+    print(f"✗ {str(e)[:40]}")
+    # Continue with next event
+```
+
+<Note>
+Failed events are skipped, and the collector continues with remaining races to maximize data collection.
+</Note>
+
+### Data Validation
+
+The collector validates data before saving:
+
+```python
+# Only save if we have a valid position
+if pd.notna(position):
+    all_results.append({...})
+```
+
+## Usage Example
+
+<CodeGroup>
+
+```python Complete Collection
+import fastf1
+import pandas as pd
+
+# Enable caching
+fastf1.Cache.enable_cache('./data/f1_cache')
+
+all_results = []
+
+# Collect data for 2023-2024 seasons
+for year in [2023, 2024]:
+    schedule = fastf1.get_event_schedule(year)
+    
+    for idx, event in schedule.iterrows():
+        # Skip testing events
+        if event['EventFormat'] == 'testing':
+            continue
+        
+        round_num = event['RoundNumber']
+        session = fastf1.get_session(year, round_num, 'R')
+        session.load()
+        
+        # Extract results
+        results = session.results
+        for _, driver in results.iterrows():
+            all_results.append({
+                'Year': year,
+                'Round': round_num,
+                'DriverCode': driver['Abbreviation'],
+                'Position': int(driver['Position']),
+                'Points': float(driver['Points'])
+            })
+
+# Save to CSV
+df = pd.DataFrame(all_results)
+df.to_csv('./data/raw/race_results.csv', index=False)
+```
+
+```python Single Race
+import fastf1
+
+# Get 2024 Bahrain GP race data
+session = fastf1.get_session(2024, 1, 'R')
+session.load()
+
+# Access race results
+results = session.results
+print(results[['Abbreviation', 'Position', 'Points']])
+```
+
+```python Driver Analysis
+import fastf1
+
+# Load race session
+session = fastf1.get_session(2024, 1, 'R')
+session.load()
+
+# Get specific driver data
+laps = session.laps
+ver_laps = laps[laps['Driver'] == 'VER']
+
+print(f"Total laps: {len(ver_laps)}")
+print(f"Fastest lap: {ver_laps['LapTime'].min()}")
+```
+
+</CodeGroup>
+
+## Data Sources
+
+### FastF1 API
+
+The collector relies on the FastF1 library which fetches data from:
+
+- **Official F1 Timing Data**: Live timing and telemetry
+- **Ergast API**: Historical race results and standings
+- **FIA Documents**: Official race classifications
+
+### Supported Data Types
+
+- Race results and classifications
+- Grid positions and qualifying results
+- Championship points allocations
+- Driver and team information
+- Lap-by-lap timing data
+
+## Performance Considerations
+
+<Note>
+**Cache Usage**: Always enable caching to avoid redundant downloads. The cache significantly speeds up repeated data access.
+</Note>
+
+<Note>
+**API Rate Limits**: The FastF1 library handles rate limiting automatically, but collecting large datasets may take several minutes.
+</Note>
+
+<Note>
+**Network Requirements**: Active internet connection required for initial data fetch. Cached data can be accessed offline.
+</Note>
+
+## Output Statistics
+
+The collector provides summary statistics upon completion:
+
+```python
+print(f"Total results: {len(df)}")
+print(f"Valid positions: {df['Position'].notna().sum()}")
+print(f"Years: {df['Year'].unique()}")
+print(f"Position distribution:")
+print(df['Position'].value_counts().sort_index())
+```
+
+**Example Output**:
+```
+Total results: 840
+Valid positions: 840
+Years: [2023 2024]
+✓ Saved to: data/raw/race_results_WORKING.csv
+```

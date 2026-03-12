@@ -1,0 +1,507 @@
+---
+title: 'Race Simulation'
+description: 'Run realistic lap-by-lap race simulations with strategy, weather, and DNFs'
+icon: 'flag-checkered'
+---
+
+## Overview
+
+The race simulation engine provides realistic lap-by-lap race simulations featuring tire degradation, pit stops, safety cars, weather changes, and mechanical failures. Perfect for testing strategies and predicting race outcomes.
+
+## Race Engine Architecture
+
+The simulation runs on a sophisticated multi-component system:
+
+```python race_engine.py
+RACE_LAPS = 50
+PIT_LOSS  = 22.0   # seconds lost in pit lane
+
+# Driver profiles with skill ratings
+DRIVERS = {
+    "VER": {"name":"Max Verstappen", "team":"Red Bull", 
+            "skill":0.970, "wet":0.960, "tire_mgmt":0.92},
+    "HAM": {"name":"Lewis Hamilton", "team":"Ferrari",
+            "skill":0.945, "wet":0.980, "tire_mgmt":0.95},
+    # ... 20 total drivers
+}
+
+# Team car performance ratings
+TEAM_CAR = {
+    "Red Bull":     0.960,
+    "Ferrari":      0.955,
+    "McLaren":      0.958,
+    # ... all teams
+}
+```
+
+## Running a Simulation
+
+### Basic Simulation
+
+Run a complete race with default settings:
+
+```python race_engine.py
+from race_engine import simulate_race
+
+# Run dry race on standard circuit
+result = simulate_race(
+    weather="DRY",
+    circuit="STANDARD",
+    seed=42  # for reproducibility
+)
+
+print(f"Winner: {result['winner']}")
+print(f"Podium: {' / '.join(result['podium'])}")
+print(f"DNFs: {result['dnf_count']}")
+```
+
+**Example Output:**
+
+```
+Winner: Max Verstappen
+Podium: Max Verstappen / Lando Norris / Charles Leclerc
+SC deployments: 2 (laps [12, 34])
+DNFs: 3
+Fastest lap: Lewis Hamilton - 88.234s
+
+Top 5:
+  P1: Max Verstappen            WINNER       1 stop(s) - ['SOFT', 'MEDIUM']
+  P2: Lando Norris              +8.456s      1 stop(s) - ['MEDIUM', 'HARD']
+  P3: Charles Leclerc           +15.234s     1 stop(s) - ['SOFT', 'MEDIUM']
+  P4: Lewis Hamilton            +23.891s     1 stop(s) - ['MEDIUM', 'HARD']
+  P5: Oscar Piastri             +31.567s     2 stop(s) - ['SOFT', 'MEDIUM', 'HARD']
+```
+
+### Weather Scenarios
+
+<Tabs>
+  <Tab title="Dry Race">
+    ```python
+    result = simulate_race(weather="DRY", circuit="STANDARD")
+    
+    # Characteristics:
+    # - Grid position is king
+    # - Pole has ~42% win rate
+    # - Standard tire strategies (S-M, M-H)
+    # - Fewer position changes
+    ```
+  </Tab>
+  
+  <Tab title="Light Rain">
+    ```python
+    result = simulate_race(weather="LIGHT_RAIN", circuit="STANDARD")
+    
+    # Characteristics:
+    # - Wet skill matters more
+    # - Pole advantage drops to ~35%
+    # - Intermediate tires
+    # - More overtaking opportunities
+    # - Hamilton/Alonso advantage
+    ```
+  </Tab>
+  
+  <Tab title="Heavy Rain">
+    ```python
+    result = simulate_race(weather="HEAVY_RAIN", circuit="STANDARD")
+    
+    # Characteristics:
+    # - Complete chaos
+    # - Pole conversion only ~23%
+    # - Full wet tires
+    # - High DNF probability
+    # - Backmarkers can score podiums
+    ```
+  </Tab>
+</Tabs>
+
+## Qualifying Simulation
+
+The race starts with a realistic qualifying session:
+
+```python race_engine.py
+# Qualifying simulation (determines grid)
+quali_scores = {}
+for code, d in DRIVERS.items():
+    # Use wet skill in rain, dry skill otherwise
+    eff = d["wet"] if weather != "DRY" else d["skill"]
+    car = TEAM_CAR[d["team"]]
+    
+    # Add randomness (±1.5% variation)
+    quali_scores[code] = eff * car + random.gauss(0, 0.015)
+
+# Sort to get grid order (best score = pole)
+grid_order = sorted(
+    DRIVERS.keys(),
+    key=lambda c: quali_scores[c],
+    reverse=True
+)
+```
+
+**Typical Grid Order:**
+
+```
+ 1. VER  Max Verstappen     Red Bull
+ 2. NOR  Lando Norris       McLaren
+ 3. LEC  Charles Leclerc    Ferrari
+ 4. HAM  Lewis Hamilton     Ferrari
+ 5. PIA  Oscar Piastri      McLaren
+ ...
+```
+
+## Lap-by-Lap Execution
+
+Each lap processes multiple events:
+
+```python race_engine.py
+for lap in range(1, RACE_LAPS + 1):
+    
+    # 1. Weather changes (3% chance per lap)
+    if lap > 5 and random.random() < 0.03:
+        current_weather = "LIGHT_RAIN"
+        weather_history.append((lap, current_weather))
+    
+    # 2. Safety car deployment (4% per lap)
+    if not sc_active and random.random() < 0.04:
+        sc_laps_remaining = random.randint(3, 6)
+        sc_active = True
+        sc_deploy_history.append(lap)
+    
+    # 3. Each car executes lap
+    for car in active_cars:
+        
+        # Pit stop decision
+        if lap == car.pit_stops[0]:
+            car.execute_pit_stop()
+        
+        # DNF check (0.6% per car per lap)
+        if random.random() < 0.006:
+            car.dnf = True
+            car.dnf_lap = lap
+            continue
+        
+        # Calculate lap time
+        lt = car.base_lap_time(lap, current_weather, sc_active)
+        car.total_time += lt
+        car.tire_age += 1
+    
+    # 4. Sort positions
+    alive = sorted(
+        [c for c in cars.values() if not c.dnf],
+        key=lambda c: c.total_time
+    )
+```
+
+## Car State Tracking
+
+Each car maintains detailed state throughout the race:
+
+```python race_engine.py
+class CarState:
+    def __init__(self, code, strategy, grid_pos, weather):
+        self.code        = code
+        self.name        = DRIVERS[code]["name"]
+        self.team        = DRIVERS[code]["team"]
+        self.skill       = DRIVERS[code]["skill"]
+        self.wet_skill   = DRIVERS[code]["wet"]
+        self.tire_mgmt   = DRIVERS[code]["tire_mgmt"]
+        
+        self.position    = grid_pos
+        self.total_time  = 0.0
+        self.tire        = strategy["start"]
+        self.tire_age    = 0
+        self.pit_count   = 0
+        self.pit_stops   = list(strategy["pits"])
+        self.dnf         = False
+        self.fastest_lap = 999.0
+        self.lap_times   = []
+        self.positions   = [grid_pos]
+        self.events      = []
+```
+
+## Safety Car Events
+
+Safety cars add strategic complexity:
+
+```python race_engine.py
+# Random SC trigger (crash / debris) - ~4% per lap
+if not sc_active and random.random() < 0.04:
+    sc_laps_remaining = random.randint(3, 6)
+    sc_active = True
+    sc_deploy_history.append(lap)
+    
+    for c in cars.values():
+        c.events.append(f"L{lap}: SAFETY CAR deployed!")
+
+# Opportunistic pit stops under SC
+if sc_active and car.pit_stops and abs(lap - car.pit_stops[0]) <= 3:
+    pitting = True
+    car.events.append(f"L{lap}: Pit under Safety Car!")
+```
+
+**Safety Car Impact:**
+
+- Bunches up the field
+- Reduces pit stop time loss (~10s vs 22s)
+- Teams adjust strategies
+- Can shuffle race order completely
+
+## Weather Changes
+
+Dynamic weather affects strategy:
+
+```python race_engine.py
+# Weather change mid-race
+if lap > 5:
+    roll = random.random()
+    
+    if current_weather == "DRY" and roll < 0.03:
+        current_weather = "LIGHT_RAIN"
+        weather_history.append((lap, current_weather))
+        for c in cars.values():
+            c.events.append(f"L{lap}: Rain starts!")
+    
+    elif current_weather == "LIGHT_RAIN":
+        if roll < 0.04:
+            current_weather = "HEAVY_RAIN"
+            weather_history.append((lap, current_weather))
+        elif roll < 0.07:
+            current_weather = "DRY"
+            weather_history.append((lap, current_weather))
+
+# Wet weather penalty for slick tires
+if weather == "LIGHT_RAIN":
+    if self.tire in ["SOFT","MEDIUM","HARD"]:
+        base += 3.0 + random.gauss(0, 0.8)  # Major time loss
+```
+
+## DNFs and Reliability
+
+Mechanical failures add realism:
+
+```python race_engine.py
+# DNF check (~0.6% per car per lap = ~5% per race)
+if random.random() < 0.006:
+    car.dnf     = True
+    car.dnf_lap = lap
+    car.events.append(f"L{lap}: DNF - Mechanical failure / Crash!")
+    continue
+```
+
+**Typical DNF Distribution:**
+
+- 0-2 DNFs: 60% of races
+- 3-4 DNFs: 30% of races
+- 5+ DNFs: 10% of races (chaotic)
+
+## Race Results Output
+
+The simulation returns comprehensive results:
+
+```python
+result = simulate_race(weather="DRY", circuit="STANDARD", seed=42)
+
+# Result structure
+{
+    "weather": "DRY",
+    "circuit": "STANDARD",
+    "total_laps": 50,
+    "winner": "Max Verstappen",
+    "podium": ["Max Verstappen", "Lando Norris", "Charles Leclerc"],
+    "fastest_lap": {"driver": "Lewis Hamilton", "time": 88.234},
+    "dnf_count": 3,
+    "sc_deployments": [12, 34],
+    "weather_history": [(1, "DRY")],
+    
+    "results": [
+        {
+            "position": 1,
+            "code": "VER",
+            "name": "Max Verstappen",
+            "team": "Red Bull",
+            "total_time": 4536.245,
+            "gap": 0.0,
+            "pit_count": 1,
+            "pit_laps": [18],
+            "tires_used": ["SOFT", "MEDIUM"],
+            "fastest_lap": 89.123,
+            "dnf": false,
+            "grid_pos": 1,
+            "laps_led": 48
+        },
+        # ... all 20 drivers
+    ],
+    
+    "lap_log": [
+        {
+            "lap": 1,
+            "sc": false,
+            "vsc": false,
+            "weather": "DRY",
+            "top5": [
+                {"code": "VER", "name": "Max Verstappen", 
+                 "gap": 0.0, "tire": "SOFT", "tire_age": 1}
+                # ... top 5
+            ]
+        },
+        # ... all 50 laps
+    ]
+}
+```
+
+## Flask API Integration
+
+Run simulations via the web dashboard:
+
+```python app.py
+@app.route('/api/lap_race')
+def lap_race():
+    from race_engine import simulate_race
+    
+    weather = request.args.get('weather', 'DRY')
+    circuit = request.args.get('circuit', 'STANDARD')
+    
+    result = simulate_race(weather=weather, circuit=circuit)
+    return jsonify(result)
+```
+
+### Dashboard Usage
+
+<Steps>
+  <Step title="Start Dashboard">
+    ```bash
+    python app.py
+    ```
+    Navigate to `http://localhost:5000`
+  </Step>
+  
+  <Step title="Select Race Parameters">
+    - Weather: Dry / Light Rain / Heavy Rain
+    - Circuit: Standard / Street / High-Speed / Desert
+  </Step>
+  
+  <Step title="Run Simulation">
+    Click "Run Full Race" to execute 50-lap simulation
+  </Step>
+  
+  <Step title="View Results">
+    - Podium display
+    - Position changes chart
+    - Lap times distribution
+    - Race events log
+  </Step>
+</Steps>
+
+## Visualization Features
+
+The dashboard provides interactive visualizations:
+
+### Position Changes Chart
+
+```javascript app.py
+function renderPositionChart() {
+    var traces = [];
+    var top10 = lastRaceData.results.slice(0, 10);
+    
+    top10.forEach(function(r) {
+        traces.push({
+            x: Array.from({length: r.positions.length}, (_, i) => i),
+            y: r.positions,
+            name: r.name.split(' ').pop(),
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: r.color, width: 2 }
+        });
+    });
+    
+    Plotly.newPlot('posChart', traces, {
+        title: 'Position Changes - Top 10',
+        xaxis: { title: 'Lap' },
+        yaxis: { title: 'Position', autorange: 'reversed' },
+        shapes: lastRaceData.sc_deployments.map(lap => ({
+            type: 'line', x0: lap, x1: lap, y0: 1, y1: 20,
+            line: { color: 'yellow', width: 2, dash: 'dot' }
+        }))
+    });
+}
+```
+
+### Race Events Log
+
+```javascript app.py
+function renderEvents() {
+    var html = '<h3>📣 Race Events Log</h3>';
+    
+    // Safety car events
+    if (lastRaceData.sc_deployments.length > 0) {
+        html += '<div class="event-safety-car">' +
+            '<strong>🚨 Safety Car deployed:</strong> Laps ' +
+            lastRaceData.sc_deployments.join(', ') + '</div>';
+    }
+    
+    // Weather changes
+    if (lastRaceData.weather_history.length > 1) {
+        html += '<div class="event-weather">' +
+            '<strong>🌦️ Weather changes:</strong> ' +
+            lastRaceData.weather_history.map(w => 
+                'L' + w[0] + ': ' + w[1]
+            ).join(' → ') + '</div>';
+    }
+    
+    // Per-driver events
+    lastRaceData.results.forEach(function(r) {
+        if (r.events && r.events.length > 0) {
+            html += '<div class="race-card">' +
+                '<strong>' + r.name + ' (P' + r.position + ')</strong>' +
+                r.events.map(e => '<p>• ' + e + '</p>').join('') +
+                '</div>';
+        }
+    });
+}
+```
+
+## Advanced Simulations
+
+### Monte Carlo Season Simulation
+
+Run multiple races to simulate a championship:
+
+```python
+from race_engine import simulate_race
+import random
+
+driver_points = {}
+for race_num in range(24):  # Full season
+    result = simulate_race(
+        weather=random.choice(["DRY", "LIGHT_RAIN", "HEAVY_RAIN"]),
+        circuit=random.choice(["STANDARD", "STREET", "FAST"])
+    )
+    
+    # Award points
+    points = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
+    for i, driver_result in enumerate(result["results"][:10]):
+        code = driver_result["code"]
+        driver_points[code] = driver_points.get(code, 0) + points[i]
+
+# Championship standings
+standings = sorted(driver_points.items(), key=lambda x: x[1], reverse=True)
+print(f"Champion: {standings[0][0]} with {standings[0][1]} points")
+```
+
+<Note>
+  The simulation engine is designed for realism. Each race takes ~0.5-1 second to compute all 50 laps for 20 drivers with full state tracking.
+</Note>
+
+<Warning>
+  Using `seed` parameter ensures reproducibility for testing, but remove it for production to get varied race outcomes.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Web Dashboard" icon="chart-line" href="/guides/web-dashboard">
+    Explore the interactive race simulation dashboard
+  </Card>
+  <Card title="Tire Strategy" icon="tire" href="/guides/tire-strategy">
+    Deep dive into tire degradation modeling
+  </Card>
+</CardGroup>

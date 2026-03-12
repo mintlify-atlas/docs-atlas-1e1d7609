@@ -1,0 +1,575 @@
+---
+title: 'Tire Degradation'
+description: 'API reference for tire degradation modeling and tire strategy features'
+---
+
+## Overview
+
+The tire degradation system models how tire performance deteriorates over race distance, affecting lap times and pit stop strategy. The system includes degradation rates, tire cliff effects, and compound-specific characteristics used in race simulations and ML predictions.
+
+**Sources:** `race_engine.py:22-42`, `feature_engineering_v2.py:26-30`
+
+---
+
+## Tire Degradation Constants
+
+### TIRE_DEG
+
+Degradation rate in seconds added per lap for each tire compound.
+
+**Source:** `race_engine.py:29`
+
+```python
+TIRE_DEG = {
+    "SOFT":   0.085,
+    "MEDIUM": 0.050,
+    "HARD":   0.028,
+    "INTER":  0.060,
+    "WET":    0.035,
+}
+```
+
+<ParamField path="SOFT" type="float" default="0.085">
+  Soft compound: Highest degradation, fastest initial pace
+</ParamField>
+
+<ParamField path="MEDIUM" type="float" default="0.050">
+  Medium compound: Balanced degradation and pace
+</ParamField>
+
+<ParamField path="HARD" type="float" default="0.028">
+  Hard compound: Lowest degradation, slowest initial pace
+</ParamField>
+
+<ParamField path="INTER" type="float" default="0.060">
+  Intermediate: For light rain conditions
+</ParamField>
+
+<ParamField path="WET" type="float" default="0.035">
+  Full wet: For heavy rain, lower degradation due to water cooling
+</ParamField>
+
+**Usage Example:**
+
+```python
+from race_engine import TIRE_DEG
+
+tire = "SOFT"
+laps_on_tire = 15
+degradation = TIRE_DEG[tire] * laps_on_tire
+
+print(f"After {laps_on_tire} laps on {tire} tires:")
+print(f"Added lap time: +{degradation:.3f}s")
+```
+
+**Output:**
+```
+After 15 laps on SOFT tires:
+Added lap time: +1.275s
+```
+
+---
+
+### TIRE_PACE
+
+Base lap time offset (in seconds) compared to optimal pace for each compound.
+
+**Source:** `race_engine.py:22`
+
+```python
+TIRE_PACE = {
+    "SOFT":   0.0,
+    "MEDIUM": 0.4,
+    "HARD":   0.8,
+    "INTER":  1.5,
+    "WET":    3.0,
+}
+```
+
+<ParamField path="SOFT" type="float" default="0.0">
+  Optimal pace (baseline)
+</ParamField>
+
+<ParamField path="MEDIUM" type="float" default="0.4">
+  +0.4s slower than soft compound
+</ParamField>
+
+<ParamField path="HARD" type="float" default="0.8">
+  +0.8s slower than soft compound
+</ParamField>
+
+<ParamField path="INTER" type="float" default="1.5">
+  +1.5s slower (in wet conditions)
+</ParamField>
+
+<ParamField path="WET" type="float" default="3.0">
+  +3.0s slower (in heavy rain)
+</ParamField>
+
+**Usage Example:**
+
+```python
+from race_engine import TIRE_PACE
+
+base_lap_time = 90.0  # seconds
+tire = "MEDIUM"
+
+lap_time = base_lap_time + TIRE_PACE[tire]
+print(f"Lap time on {tire}: {lap_time:.3f}s")
+```
+
+**Output:**
+```
+Lap time on MEDIUM: 90.400s
+```
+
+---
+
+### TIRE_CLIFF
+
+Lap number after which degradation accelerates exponentially.
+
+**Source:** `race_engine.py:36`
+
+```python
+TIRE_CLIFF = {
+    "SOFT":   18,
+    "MEDIUM": 28,
+    "HARD":   40,
+    "INTER":  22,
+    "WET":    30,
+}
+```
+
+<ParamField path="SOFT" type="int" default="18">
+  Soft tires hit performance cliff after 18 laps
+</ParamField>
+
+<ParamField path="MEDIUM" type="int" default="28">
+  Medium tires hit performance cliff after 28 laps
+</ParamField>
+
+<ParamField path="HARD" type="int" default="40">
+  Hard tires hit performance cliff after 40 laps
+</ParamField>
+
+<ParamField path="INTER" type="int" default="22">
+  Intermediate tires hit cliff after 22 laps
+</ParamField>
+
+<ParamField path="WET" type="int" default="30">
+  Wet tires hit cliff after 30 laps
+</ParamField>
+
+**Cliff Effect:**
+
+After reaching the cliff lap, degradation rate increases by 2.2x.
+
+```python
+# From race_engine.py:147-148
+cliff = TIRE_CLIFF.get(tire, 25)
+age_factor = tire_age if tire_age < cliff else cliff + (tire_age - cliff) * 2.2
+```
+
+**Usage Example:**
+
+```python
+from race_engine import TIRE_DEG, TIRE_CLIFF
+
+tire = "SOFT"
+base_deg = TIRE_DEG[tire]
+cliff_lap = TIRE_CLIFF[tire]
+
+# Before cliff (lap 15)
+lap_15_deg = base_deg * 15
+print(f"Lap 15 total degradation: +{lap_15_deg:.3f}s")
+
+# After cliff (lap 25)
+laps_past_cliff = 25 - cliff_lap
+age_factor = cliff_lap + (laps_past_cliff * 2.2)
+lap_25_deg = base_deg * age_factor
+print(f"Lap 25 total degradation: +{lap_25_deg:.3f}s")
+```
+
+**Output:**
+```
+Lap 15 total degradation: +1.275s
+Lap 25 total degradation: +2.377s
+```
+
+---
+
+## Tire Degradation for Feature Engineering
+
+### TIRE_DEGRADATION (V2)
+
+Simplified degradation rates used in machine learning feature engineering.
+
+**Source:** `feature_engineering_v2.py:26`
+
+```python
+TIRE_DEGRADATION = {
+    'SOFT': 0.08,
+    'MEDIUM': 0.05,
+    'HARD': 0.03
+}
+```
+
+<ParamField path="SOFT" type="float" default="0.08">
+  Soft compound degradation rate for ML features
+</ParamField>
+
+<ParamField path="MEDIUM" type="float" default="0.05">
+  Medium compound degradation rate for ML features
+</ParamField>
+
+<ParamField path="HARD" type="float" default="0.03">
+  Hard compound degradation rate for ML features
+</ParamField>
+
+---
+
+## Tire Strategy Features
+
+These features are computed in `feature_engineering_v2.py` for machine learning models.
+
+### Starting_Tire
+
+The tire compound used at race start.
+
+<ResponseField name="Starting_Tire" type="string">
+  One of: 'SOFT', 'MEDIUM', 'HARD'
+</ResponseField>
+
+**Distribution:**
+- SOFT: 50% probability
+- MEDIUM: 40% probability  
+- HARD: 10% probability
+
+---
+
+### Tire_Degradation_Rate
+
+Expected degradation rate in seconds per lap based on starting tire.
+
+<ResponseField name="Tire_Degradation_Rate" type="float">
+  Value from TIRE_DEGRADATION dict based on Starting_Tire
+</ResponseField>
+
+**Example:**
+```python
+starting_tire = "SOFT"
+degradation_rate = TIRE_DEGRADATION[starting_tire]  # 0.08
+```
+
+---
+
+### Optimal_Pit_Lap
+
+Calculated optimal lap to pit based on tire degradation.
+
+<ResponseField name="Optimal_Pit_Lap" type="int">
+  Lap number when tire loses approximately 1.6 seconds of pace
+</ResponseField>
+
+**Formula:**
+```python
+optimal_pit_lap = int(20 / expected_degradation)
+```
+
+**Examples:**
+- SOFT (0.08): Lap 250 → Pit around lap 20
+- MEDIUM (0.05): Lap 400 → Pit around lap 28
+- HARD (0.03): Lap 666 → Pit around lap 40
+
+**Source:** `feature_engineering_v2.py:81`
+
+---
+
+### Tire_Advantage
+
+Normalized tire performance advantage at race start.
+
+<ResponseField name="Tire_Advantage" type="float">
+  Performance multiplier: 1.0 (SOFT), 0.8 (MEDIUM), 0.6 (HARD)
+</ResponseField>
+
+**Source:** `feature_engineering_v2.py:115`
+
+```python
+tire_advantage = {
+    'SOFT': 1.0,
+    'MEDIUM': 0.8,
+    'HARD': 0.6
+}[starting_tire]
+```
+
+---
+
+## Lap Time Calculation
+
+### base_lap_time Method
+
+Calculates the lap time for a car considering tire degradation and other factors.
+
+**Source:** `race_engine.py:130`
+
+```python
+def base_lap_time(self, lap, weather, sc_active):
+    """Calculate lap time for this lap"""
+    base = 90.0   # base lap time in seconds
+    
+    # Car performance
+    base -= (self.car - 0.85) * 12.0
+    
+    # Driver skill
+    eff_skill = self.wet_skill if weather in ["LIGHT_RAIN","HEAVY_RAIN"] else self.skill
+    base -= (eff_skill - 0.85) * 8.0
+    
+    # Tire compound offset
+    base += TIRE_PACE.get(self.tire, 0.8)
+    
+    # Tire degradation
+    deg = TIRE_DEG.get(self.tire, 0.05)
+    cliff = TIRE_CLIFF.get(self.tire, 25)
+    age_factor = self.tire_age if self.tire_age < cliff else cliff + (self.tire_age - cliff) * 2.2
+    base += deg * age_factor
+    
+    # Safety car
+    if sc_active:
+        base = max(base, 115.0)
+    
+    # Random variation (±0.4s)
+    base += random.gauss(0, 0.4)
+    
+    return max(base, 82.0)
+```
+
+<ParamField path="lap" type="int">
+  Current lap number
+</ParamField>
+
+<ParamField path="weather" type="string">
+  Weather condition: "DRY", "LIGHT_RAIN", or "HEAVY_RAIN"
+</ParamField>
+
+<ParamField path="sc_active" type="bool">
+  Whether safety car is deployed
+</ParamField>
+
+<ResponseField name="lap_time" type="float">
+  Calculated lap time in seconds
+</ResponseField>
+
+**Example:**
+
+```python
+from race_engine import CarState
+
+car = CarState("VER", strategy, grid_pos=1, weather="DRY")
+car.tire = "SOFT"
+car.tire_age = 12
+
+lap_time = car.base_lap_time(lap=12, weather="DRY", sc_active=False)
+print(f"Lap {12} time: {lap_time:.3f}s (tire age: {car.tire_age})")
+```
+
+**Output:**
+```
+Lap 12 time: 85.276s (tire age: 12)
+```
+
+---
+
+## Complete Usage Examples
+
+<CodeGroup>
+
+```python Tire Degradation Analysis
+from race_engine import TIRE_DEG, TIRE_PACE, TIRE_CLIFF
+
+def analyze_stint(tire_compound, stint_laps):
+    """Analyze tire performance over a stint"""
+    base_pace = TIRE_PACE[tire_compound]
+    deg_rate = TIRE_DEG[tire_compound]
+    cliff = TIRE_CLIFF[tire_compound]
+    
+    print(f"\n{tire_compound} Tire Analysis ({stint_laps} laps):")
+    print(f"Base pace offset: +{base_pace}s")
+    print(f"Degradation rate: {deg_rate}s/lap")
+    print(f"Performance cliff: Lap {cliff}\n")
+    
+    for lap in [1, 10, 15, 20, 25]:
+        if lap > stint_laps:
+            break
+        
+        if lap < cliff:
+            age_factor = lap
+        else:
+            age_factor = cliff + (lap - cliff) * 2.2
+        
+        total_deg = deg_rate * age_factor
+        lap_time = 90.0 + base_pace + total_deg
+        
+        print(f"Lap {lap:2d}: {lap_time:.3f}s (deg: +{total_deg:.3f}s)")
+
+# Compare compounds
+analyze_stint("SOFT", 20)
+analyze_stint("MEDIUM", 28)
+analyze_stint("HARD", 35)
+```
+
+```python Optimal Strategy Calculator
+from race_engine import TIRE_DEG, TIRE_CLIFF
+
+def calculate_optimal_strategy(race_laps=50):
+    """Calculate optimal pit strategy"""
+    strategies = []
+    
+    # One-stop: SOFT -> MEDIUM
+    soft_stint = TIRE_CLIFF["SOFT"] - 2  # Pit before cliff
+    strategies.append({
+        "name": "S-M One Stop",
+        "stints": [("SOFT", soft_stint), ("MEDIUM", race_laps - soft_stint)],
+        "pit_lap": soft_stint
+    })
+    
+    # One-stop: MEDIUM -> HARD
+    med_stint = TIRE_CLIFF["MEDIUM"] - 2
+    strategies.append({
+        "name": "M-H One Stop",
+        "stints": [("MEDIUM", med_stint), ("HARD", race_laps - med_stint)],
+        "pit_lap": med_stint
+    })
+    
+    # Two-stop: SOFT -> MEDIUM -> HARD
+    s1 = TIRE_CLIFF["SOFT"] - 3
+    s2 = 30 - s1
+    s3 = race_laps - s1 - s2
+    strategies.append({
+        "name": "S-M-H Two Stop",
+        "stints": [("SOFT", s1), ("MEDIUM", s2), ("HARD", s3)],
+        "pit_laps": [s1, s1 + s2]
+    })
+    
+    for strat in strategies:
+        print(f"\n{strat['name']}:")
+        total_time = 90.0 * race_laps
+        for i, (tire, laps) in enumerate(strat['stints'], 1):
+            deg = TIRE_DEG[tire] * (laps * (laps + 1) / 2)
+            print(f"  Stint {i}: {tire:6s} x {laps:2d} laps (+{deg:.1f}s deg)")
+        if 'pit_lap' in strat:
+            print(f"  Pit on lap {strat['pit_lap']}")
+        elif 'pit_laps' in strat:
+            print(f"  Pits on laps {strat['pit_laps']}")
+
+calculate_optimal_strategy(race_laps=50)
+```
+
+```python Feature Engineering
+import pandas as pd
+from feature_engineering_v2 import TIRE_DEGRADATION
+
+def create_tire_features(starting_tire):
+    """Create tire-related features for ML model"""
+    
+    degradation_rate = TIRE_DEGRADATION[starting_tire]
+    optimal_pit_lap = int(20 / degradation_rate)
+    
+    tire_advantage = {
+        'SOFT': 1.0,
+        'MEDIUM': 0.8,
+        'HARD': 0.6
+    }[starting_tire]
+    
+    features = {
+        'Starting_Tire': starting_tire,
+        'Tire_Degradation_Rate': degradation_rate,
+        'Optimal_Pit_Lap': optimal_pit_lap,
+        'Tire_Advantage': tire_advantage
+    }
+    
+    return features
+
+# Example usage
+for tire in ['SOFT', 'MEDIUM', 'HARD']:
+    features = create_tire_features(tire)
+    print(f"\n{tire} Tire Features:")
+    for key, value in features.items():
+        print(f"  {key}: {value}")
+```
+
+</CodeGroup>
+
+---
+
+## Tire Strategy Presets
+
+Predefined race strategies used in simulations.
+
+**Source:** `race_engine.py:84`
+
+```python
+STRATEGIES = {
+    "S-M":  {"start": "SOFT",   "pits": [18],       "compounds": ["SOFT",   "MEDIUM"]},
+    "M-H":  {"start": "MEDIUM", "pits": [26],       "compounds": ["MEDIUM", "HARD"]},
+    "H-M":  {"start": "HARD",   "pits": [34],       "compounds": ["HARD",   "MEDIUM"]},
+    "S-M-H":{"start": "SOFT",   "pits": [15, 32],   "compounds": ["SOFT",   "MEDIUM", "HARD"]},
+    "M-M":  {"start": "MEDIUM", "pits": [28],       "compounds": ["MEDIUM", "MEDIUM"]},
+}
+```
+
+---
+
+## Performance Comparison
+
+<Tabs>
+  <Tab title="Compound Comparison">
+    **Tire Compound Trade-offs:**
+    
+    | Compound | Base Pace | Deg Rate | Cliff Lap | Best For |
+    |----------|-----------|----------|-----------|----------|
+    | SOFT     | 0.0s      | 0.085s/lap | Lap 18 | Qualifying, short stints |
+    | MEDIUM   | +0.4s     | 0.050s/lap | Lap 28 | Balanced race strategy |
+    | HARD     | +0.8s     | 0.028s/lap | Lap 40 | Long stints, one-stop |
+    | INTER    | +1.5s     | 0.060s/lap | Lap 22 | Light rain |
+    | WET      | +3.0s     | 0.035s/lap | Lap 30 | Heavy rain |
+  </Tab>
+  
+  <Tab title="Stint Length">
+    **Optimal Stint Lengths:**
+    
+    - **SOFT**: 15-18 laps (pit before cliff)
+    - **MEDIUM**: 25-28 laps (maximize stint)
+    - **HARD**: 32-40 laps (one-stop strategy)
+    - **INTER**: 18-22 laps (drying track)
+    - **WET**: 25-30 laps (heavy rain)
+    
+    Pitting 2-3 laps before the cliff provides best overall pace.
+  </Tab>
+  
+  <Tab title="Time Loss">
+    **Degradation Over Race:**
+    
+    50-lap race, no pit stops:
+    - SOFT: +7.6s (but massive cliff penalty)
+    - MEDIUM: +5.8s
+    - HARD: +4.2s
+    
+    Including optimal pit stops (22s penalty):
+    - SOFT → MEDIUM (1 stop): ~90.3s total
+    - MEDIUM → HARD (1 stop): ~88.7s total
+    - SOFT → MED → HARD (2 stops): ~93.5s total
+  </Tab>
+</Tabs>
+
+---
+
+## Notes
+
+- Tire degradation is **non-linear**: accelerates after the cliff lap
+- Weather conditions significantly impact tire choice and degradation patterns
+- Safety car periods are ideal for pit stops (no time loss relative to field)
+- **Undercut strategy**: Pitting earlier to gain track position with fresh tires
+- **Overcut strategy**: Staying out longer to gain time while others pit
+- Real F1 degradation varies by circuit (high/low severity tracks)

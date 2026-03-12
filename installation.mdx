@@ -1,0 +1,344 @@
+---
+title: 'Installation'
+description: 'Set up your F1 ML Prediction System environment'
+icon: 'download'
+---
+
+## Prerequisites
+
+Before installing the F1 ML Prediction System, ensure you have:
+
+- **Python 3.8+** installed on your system
+- **pip** package manager
+- **Git** for version control
+- At least **2GB of free disk space** for data and models
+- Stable internet connection for data collection
+
+<Note>
+  This project uses FastF1 API which requires an active internet connection for initial data collection.
+</Note>
+
+## Quick Start Installation
+
+<Steps>
+  <Step title="Create Project Directory">
+    Create a dedicated directory for your F1 ML project:
+    
+    ```bash
+    mkdir f1-ml-project
+    cd f1-ml-project
+    ```
+  </Step>
+
+  <Step title="Set Up Virtual Environment">
+    Create and activate a Python virtual environment:
+    
+    <CodeGroup>
+    ```bash macOS/Linux
+    python -m venv venv
+    source venv/bin/activate
+    ```
+    
+    ```bash Windows
+    python -m venv venv
+    venv\Scripts\activate
+    ```
+    </CodeGroup>
+    
+    <Tip>
+      You should see `(venv)` prefix in your terminal once activated.
+    </Tip>
+  </Step>
+
+  <Step title="Install Dependencies">
+    Create a `requirements.txt` file with the following dependencies:
+    
+    ```txt requirements.txt
+    # Core Data Science
+    pandas==2.1.4
+    numpy==1.26.2
+    scipy==1.11.4
+    
+    # F1 Data
+    fastf1==3.2.0
+    
+    # Machine Learning
+    scikit-learn==1.3.2
+    tensorflow==2.15.0
+    keras==2.15.0
+    xgboost==2.0.3
+    lightgbm==4.1.0
+    
+    # Data Visualization
+    matplotlib==3.8.2
+    seaborn==0.13.0
+    plotly==5.18.0
+    
+    # Web Framework
+    flask==3.0.0
+    dash==2.14.2
+    dash-bootstrap-components==1.5.0
+    
+    # Utilities
+    jupyter==1.0.0
+    notebook==7.0.6
+    python-dotenv==1.0.0
+    tqdm==4.66.1
+    
+    # Data Processing
+    openpyxl==3.1.2
+    requests==2.31.0
+    ```
+    
+    Install all dependencies:
+    
+    ```bash
+    pip install -r requirements.txt
+    ```
+    
+    <Warning>
+      Installation may take 5-10 minutes depending on your internet speed. TensorFlow is the largest dependency (~500MB).
+    </Warning>
+  </Step>
+
+  <Step title="Create Project Structure">
+    Run the automated setup script to create the complete directory structure:
+    
+    ```python setup_project.py
+    import os
+    
+    # Create directory structure
+    directories = [
+        'data/raw',
+        'data/processed',
+        'data/cache',
+        'notebooks',
+        'src/data',
+        'src/models',
+        'src/utils',
+        'frontend/static/css',
+        'frontend/static/js',
+        'frontend/templates',
+        'models/saved_models',
+        'logs'
+    ]
+    
+    for directory in directories:
+        os.makedirs(directory, exist_ok=True)
+        print(f"✓ Created: {directory}")
+    
+    # Create __init__.py files
+    init_files = [
+        'src/__init__.py',
+        'src/data/__init__.py',
+        'src/models/__init__.py',
+        'src/utils/__init__.py'
+    ]
+    
+    for init_file in init_files:
+        with open(init_file, 'w') as f:
+            f.write('# F1 ML Project\n')
+        print(f"✓ Created: {init_file}")
+    
+    print("\n✅ Project structure created successfully!")
+    ```
+    
+    Execute the setup:
+    
+    ```bash
+    python setup_project.py
+    ```
+    
+    **Expected Output:**
+    ```
+    ✓ Created: data/raw
+    ✓ Created: data/processed
+    ✓ Created: data/cache
+    ...
+    ✅ Project structure created successfully!
+    ```
+  </Step>
+
+  <Step title="Verify Installation">
+    Verify all dependencies are correctly installed:
+    
+    ```python
+    # verify_installation.py
+    import sys
+    
+    packages = [
+        'pandas', 'numpy', 'sklearn', 'tensorflow',
+        'xgboost', 'fastf1', 'flask', 'plotly'
+    ]
+    
+    print("Verifying installation...\n")
+    
+    for package in packages:
+        try:
+            __import__(package)
+            print(f"✓ {package:15} installed")
+        except ImportError:
+            print(f"✗ {package:15} MISSING")
+            sys.exit(1)
+    
+    print("\n✅ All packages installed successfully!")
+    print(f"Python version: {sys.version}")
+    ```
+    
+    Run verification:
+    
+    ```bash
+    python verify_installation.py
+    ```
+  </Step>
+</Steps>
+
+## Final Project Structure
+
+After installation, your directory should look like this:
+
+```
+f1-ml-project/
+├── data/
+│   ├── raw/                    # Raw F1 data (CSV files)
+│   ├── processed/              # Engineered features
+│   └── cache/                  # FastF1 cache
+├── notebooks/                  # Jupyter notebooks
+├── src/
+│   ├── data/                   # Data collection scripts
+│   ├── models/                 # ML model definitions
+│   └── utils/                  # Helper functions
+├── frontend/
+│   ├── static/                 # CSS, JS assets
+│   └── templates/              # HTML templates
+├── models/
+│   └── saved_models/           # Trained model files
+├── logs/                       # Application logs
+├── requirements.txt            # Python dependencies
+└── setup_project.py            # Setup automation script
+```
+
+## Troubleshooting
+
+### "Module not found" Errors
+
+If you encounter import errors:
+
+```bash
+# Ensure virtual environment is activated
+source venv/bin/activate  # macOS/Linux
+venv\Scripts\activate     # Windows
+
+# Reinstall dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### TensorFlow Installation Issues
+
+On macOS with Apple Silicon (M1/M2):
+
+```bash
+# Use TensorFlow Metal plugin
+pip install tensorflow-metal
+```
+
+On Windows with GPU:
+
+```bash
+# Install CUDA-compatible version
+pip install tensorflow-gpu==2.15.0
+```
+
+### FastF1 Cache Errors
+
+Configure FastF1 cache directory:
+
+```python
+import fastf1
+
+# Set custom cache location
+fastf1.Cache.enable_cache('./data/cache')
+```
+
+### Port Already in Use (Flask)
+
+If port 5000 is occupied:
+
+<CodeGroup>
+```bash macOS/Linux
+# Find process using port 5000
+lsof -i :5000
+kill -9 <PID>
+```
+
+```bash Windows
+# Find and kill process
+netstat -ano | findstr :5000
+taskkill /PID <PID> /F
+```
+</CodeGroup>
+
+Or use a different port:
+
+```python
+app.run(host='0.0.0.0', port=8080)
+```
+
+## Environment Variables
+
+Create a `.env` file for configuration (optional):
+
+```bash .env
+# Flask Configuration
+FLASK_ENV=development
+FLASK_DEBUG=True
+
+# Data Collection
+DATA_START_YEAR=2018
+DATA_END_YEAR=2024
+CACHE_DIR=./data/cache
+
+# Model Training
+RANDOM_STATE=42
+TEST_SIZE=0.2
+N_ESTIMATORS=100
+```
+
+Load environment variables in your code:
+
+```python
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+cache_dir = os.getenv('CACHE_DIR', './data/cache')
+```
+
+## System Requirements
+
+### Minimum Requirements
+- **CPU:** Dual-core processor
+- **RAM:** 4GB
+- **Storage:** 2GB free space
+- **OS:** Windows 10+, macOS 10.15+, Linux
+
+### Recommended Requirements
+- **CPU:** Quad-core processor or better
+- **RAM:** 8GB or more
+- **Storage:** 5GB free space (for expanded datasets)
+- **GPU:** NVIDIA GPU with CUDA support (optional, for faster training)
+
+## Next Steps
+
+Now that your environment is set up, proceed to the [Quickstart Guide](/quickstart) to:
+
+- Collect historical F1 data
+- Engineer features
+- Train prediction models
+- Run your first predictions
+
+<Tip>
+  Bookmark this page for future reference when setting up the project on new machines.
+</Tip>

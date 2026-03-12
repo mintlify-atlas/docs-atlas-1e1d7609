@@ -1,0 +1,636 @@
+---
+title: 'Pit Stop Optimizer'
+description: 'API reference for pit stop strategy optimization and race simulation'
+---
+
+## Overview
+
+The pit stop optimization system manages pit stop timing, tire compound selection, and race strategy during simulations. It includes dynamic strategy adaptation for weather changes, safety car periods, and undercut/overcut opportunities.
+
+**Source:** `race_engine.py`
+
+---
+
+## Pit Stop Constants
+
+### PIT_LOSS
+
+Time penalty for making a pit stop (pit lane time loss).
+
+**Source:** `race_engine.py:20`
+
+```python
+PIT_LOSS = 22.0  # seconds lost in pit lane
+```
+
+<ParamField path="PIT_LOSS" type="float" default="22.0">
+  Fixed time cost in seconds for pit stop execution
+</ParamField>
+
+This includes:
+- Pit lane speed limit penalty
+- Deceleration and acceleration time
+- Actual stop time (~3-4 seconds)
+- Pit entry/exit time loss
+
+**Usage Example:**
+
+```python
+from race_engine import PIT_LOSS
+
+race_time = 1500.0  # seconds
+pit_stops = 1
+total_time = race_time + (pit_stops * PIT_LOSS)
+
+print(f"Race time with {pit_stops} stop(s): {total_time:.1f}s")
+```
+
+**Output:**
+```
+Race time with 1 stop(s): 1522.0s
+```
+
+---
+
+## Race Strategy Presets
+
+### STRATEGIES
+
+Predefined pit stop strategies for dry conditions.
+
+**Source:** `race_engine.py:84`
+
+```python
+STRATEGIES = {
+    "S-M":  {"start": "SOFT",   "pits": [18],       "compounds": ["SOFT",   "MEDIUM"]},
+    "M-H":  {"start": "MEDIUM", "pits": [26],       "compounds": ["MEDIUM", "HARD"]},
+    "H-M":  {"start": "HARD",   "pits": [34],       "compounds": ["HARD",   "MEDIUM"]},
+    "S-M-H":{"start": "SOFT",   "pits": [15, 32],   "compounds": ["SOFT",   "MEDIUM", "HARD"]},
+    "M-M":  {"start": "MEDIUM", "pits": [28],       "compounds": ["MEDIUM", "MEDIUM"]},
+}
+```
+
+<ParamField path="start" type="string">
+  Starting tire compound
+</ParamField>
+
+<ParamField path="pits" type="list">
+  List of planned pit stop lap numbers
+</ParamField>
+
+<ParamField path="compounds" type="list">
+  Ordered list of tire compounds to use (includes starting tire)
+</ParamField>
+
+**Strategy Details:**
+
+| Strategy | Type | Starting Tire | Pit Lap(s) | Compounds Used | Best For |
+|----------|------|---------------|------------|----------------|----------|
+| S-M | One-stop | SOFT | 18 | Soft → Medium | Qualifying pace, track position |
+| M-H | One-stop | MEDIUM | 26 | Medium → Hard | Balanced approach |
+| H-M | One-stop | HARD | 34 | Hard → Medium | Long first stint |
+| S-M-H | Two-stop | SOFT | 15, 32 | Soft → Med → Hard | Maximum pace |
+| M-M | One-stop | MEDIUM | 28 | Medium → Medium | Consistent pace |
+
+---
+
+### WET_STRATEGY
+
+Strategy preset for wet weather races.
+
+**Source:** `race_engine.py:93`
+
+```python
+WET_STRATEGY = {
+    "start": "WET", 
+    "pits": [], 
+    "compounds": ["WET"]
+}
+```
+
+<ParamField path="start" type="string">
+  Starts on full wet tires
+</ParamField>
+
+<ParamField path="pits" type="list">
+  Empty list - no planned stops (until track dries)
+</ParamField>
+
+<ParamField path="compounds" type="list">
+  Only wet tires used
+</ParamField>
+
+**Note:** Strategy adapts dynamically if weather changes during race.
+
+---
+
+## Strategy Assignment
+
+### assign_strategies
+
+Assigns racing strategies to all drivers based on weather and grid position.
+
+**Source:** `race_engine.py:168`
+
+```python
+def assign_strategies(weather):
+    """Assign strategies to all 20 drivers"""
+```
+
+<ParamField path="weather" type="string">
+  Starting weather condition: "DRY", "LIGHT_RAIN", or "HEAVY_RAIN"
+</ParamField>
+
+<ResponseField name="assignments" type="dict">
+  Dictionary mapping driver codes to strategy objects
+</ResponseField>
+
+**Strategy Assignment Logic:**
+
+```python
+# Heavy rain
+if weather == "HEAVY_RAIN":
+    strategy = WET_STRATEGY
+    
+# Light rain
+elif weather == "LIGHT_RAIN":
+    strategy = {
+        "start": "INTER",
+        "pits": [26],
+        "compounds": ["INTER", "MEDIUM"]
+    }
+    
+# Dry conditions
+else:
+    # Top teams (P1-P6)
+    if grid_pos <= 6:
+        strategy = random.choice(["S-M", "M-H", "S-M-H"])
+    
+    # Midfield (P7-P12)
+    elif grid_pos <= 12:
+        strategy = random.choice(["M-H", "H-M", "M-M"])
+    
+    # Backmarkers (P13-P20)
+    else:
+        strategy = random.choice(["H-M", "M-H"])
+```
+
+**Example:**
+
+```python
+from race_engine import assign_strategies
+
+strategies = assign_strategies(weather="DRY")
+
+for driver_code, strategy in strategies.items():
+    print(f"{driver_code}: {strategy['start']} → {strategy['compounds']}")
+```
+
+**Output:**
+```
+VER: SOFT → ['SOFT', 'MEDIUM']
+HAM: MEDIUM → ['MEDIUM', 'HARD']
+LEC: SOFT → ['SOFT', 'MEDIUM', 'HARD']
+...
+```
+
+---
+
+## Pit Stop Decision Logic
+
+### Pit Stop Trigger
+
+Pit stops are triggered by strategic planning or opportunistic timing.
+
+**Source:** `race_engine.py:272-281`
+
+```python
+# Planned pit stop
+pitting = False
+if car.pit_stops and lap == car.pit_stops[0]:
+    pitting = True
+
+# Opportunistic SC pit
+elif sc_active and car.pit_stops and abs(lap - car.pit_stops[0]) <= 3:
+    pitting = True
+    car.events.append(f"L{lap}: Pit under Safety Car!")
+```
+
+**Pit Stop Conditions:**
+
+1. **Planned Stop:** Current lap matches next planned pit lap
+2. **Safety Car Window:** Within 3 laps of planned stop AND safety car is out
+3. **Weather Change:** Automatic tire change if current tire unsuitable
+
+---
+
+### Pit Stop Execution
+
+When a pit stop is executed, the following occurs:
+
+**Source:** `race_engine.py:283-298`
+
+```python
+if pitting:
+    car.pit_stops.pop(0)  # Remove executed pit from queue
+    car.compound_idx += 1
+    next_cpd = car.compounds[min(car.compound_idx, len(car.compounds)-1)]
+    
+    # Handle wet/dry transitions
+    if current_weather in ["LIGHT_RAIN","HEAVY_RAIN"] and next_cpd in ["SOFT","MEDIUM","HARD"]:
+        next_cpd = "INTER"
+    elif current_weather == "DRY" and next_cpd == "WET":
+        next_cpd = "MEDIUM"
+    
+    car.tire = next_cpd
+    car.tire_age = 0
+    car.pit_count += 1
+    car.pit_laps.append(lap)
+    car.total_time += PIT_LOSS
+    car.events.append(f"L{lap}: PIT → {next_cpd} tires (pit #{car.pit_count})")
+```
+
+**Pit Stop Effects:**
+
+1. **Time Penalty:** +22 seconds to total race time
+2. **Tire Reset:** New compound, tire age reset to 0
+3. **Strategy Update:** Next compound from planned sequence
+4. **Weather Adaptation:** Automatic compound override if conditions changed
+
+---
+
+## CarState Attributes
+
+### Pit-Related Attributes
+
+**Source:** `race_engine.py:97-128`
+
+<ParamField path="pit_count" type="int">
+  Total number of pit stops completed
+</ParamField>
+
+<ParamField path="pit_stops" type="list">
+  Remaining planned pit stop lap numbers (consumed as pits occur)
+</ParamField>
+
+<ParamField path="pit_laps" type="list">
+  List of laps on which pit stops were actually taken
+</ParamField>
+
+<ParamField path="tire" type="string">
+  Current tire compound on the car
+</ParamField>
+
+<ParamField path="tire_age" type="int">
+  Number of laps completed on current tires
+</ParamField>
+
+<ParamField path="compounds" type="list">
+  Full list of compounds in the strategy
+</ParamField>
+
+<ParamField path="compound_idx" type="int">
+  Index of current compound in the compounds list
+</ParamField>
+
+**Example:**
+
+```python
+# After 2 pit stops
+car.pit_count = 2
+car.pit_laps = [15, 32]
+car.tire = "HARD"
+car.tire_age = 5
+car.compounds = ["SOFT", "MEDIUM", "HARD"]
+car.compound_idx = 2
+```
+
+---
+
+## Complete Pit Strategy Examples
+
+<CodeGroup>
+
+```python Simulate One-Stop Strategy
+from race_engine import simulate_race
+
+# Run simulation with seed for reproducibility
+result = simulate_race(weather="DRY", circuit="STANDARD", seed=42)
+
+# Analyze pit strategies
+for driver_result in result['results'][:5]:
+    print(f"\nP{driver_result['position']}: {driver_result['name']}")
+    print(f"  Pit stops: {driver_result['pit_count']}")
+    print(f"  Pit laps: {driver_result['pit_laps']}")
+    print(f"  Tires used: {' → '.join(driver_result['tires_used'])}")
+    print(f"  Total time: {driver_result['total_time']:.1f}s")
+    print(f"  Fastest lap: {driver_result['fastest_lap']:.3f}s")
+```
+
+```python Undercut Strategy Analysis
+from race_engine import TIRE_DEG, PIT_LOSS
+
+def analyze_undercut(lap_time_leader, lap_time_chaser, gap, pit_lap):
+    """Analyze undercut opportunity"""
+    
+    # Leader continues on old tires
+    leader_old_tire_age = pit_lap - 5  # assume they started earlier
+    leader_deg = TIRE_DEG["SOFT"] * leader_old_tire_age
+    leader_lap = lap_time_leader + leader_deg
+    
+    # Chaser pits and gets fresh tires
+    chaser_pit_time = lap_time_chaser + PIT_LOSS
+    chaser_fresh_lap = lap_time_chaser + TIRE_DEG["SOFT"] * 1
+    
+    # Calculate time delta
+    time_gained_per_lap = leader_lap - chaser_fresh_lap
+    laps_to_gain_gap = gap / time_gained_per_lap
+    
+    print(f"\nUndercut Analysis (Pit Lap {pit_lap}):")
+    print(f"  Gap before pit: {gap:.1f}s")
+    print(f"  Leader lap time: {leader_lap:.3f}s (tire age: {leader_old_tire_age})")
+    print(f"  Chaser lap time (fresh): {chaser_fresh_lap:.3f}s")
+    print(f"  Time gained per lap: {time_gained_per_lap:.3f}s")
+    print(f"  Laps to overtake: {laps_to_gain_gap:.1f}")
+    
+    if laps_to_gain_gap < 3:
+        print(f"  ✅ UNDERCUT VIABLE - Overtake in ~{int(laps_to_gain_gap)+1} laps")
+    else:
+        print(f"  ❌ Undercut risky - Takes {laps_to_gain_gap:.1f} laps")
+
+# Example scenarios
+analyze_undercut(lap_time_leader=86.5, lap_time_chaser=86.3, gap=4.5, pit_lap=18)
+analyze_undercut(lap_time_leader=86.5, lap_time_chaser=86.3, gap=8.0, pit_lap=18)
+```
+
+```python Safety Car Strategy
+def should_pit_under_sc(planned_pit_lap, current_lap, sc_lap, remaining_laps):
+    """Decide whether to pit under safety car"""
+    
+    # Calculate normal pit cost
+    normal_pit_cost = 22.0  # PIT_LOSS
+    
+    # Under SC, pit cost is reduced (less time loss vs field)
+    sc_pit_cost = 12.0  # estimated reduced cost
+    
+    # How far are we from planned pit?
+    laps_early = planned_pit_lap - current_lap
+    laps_late = current_lap - planned_pit_lap
+    
+    # Decision logic
+    if abs(current_lap - planned_pit_lap) <= 3:
+        # Within window
+        time_saved = normal_pit_cost - sc_pit_cost
+        print(f"✅ PIT NOW - Save ~{time_saved:.1f}s vs normal pit")
+        return True
+    
+    elif laps_early > 3:
+        # Too early - tires won't last
+        deg_cost = 0.08 * (laps_early) * (laps_early + 1) / 2
+        if deg_cost > 10:
+            print(f"❌ TOO EARLY - Need {laps_early} more laps on tires")
+            return False
+        else:
+            print(f"⚠️ MARGINAL - {laps_early} laps early, but saves time")
+            return True
+    
+    else:
+        print(f"❌ TOO LATE - Already {laps_late} laps past optimal")
+        return False
+
+# Test scenarios
+print("Scenario 1: SC on lap 15, planned pit lap 18")
+should_pit_under_sc(18, 15, 15, 35)
+
+print("\nScenario 2: SC on lap 10, planned pit lap 18")
+should_pit_under_sc(18, 10, 10, 40)
+
+print("\nScenario 3: SC on lap 20, planned pit lap 18")
+should_pit_under_sc(18, 20, 20, 30)
+```
+
+```python Optimal Pit Window
+from race_engine import TIRE_DEG, TIRE_CLIFF, PIT_LOSS
+
+def calculate_pit_window(tire_compound, race_laps):
+    """Calculate optimal pit window for a compound"""
+    
+    deg = TIRE_DEG[tire_compound]
+    cliff = TIRE_CLIFF[tire_compound]
+    
+    # Earliest reasonable pit (tire loses ~1s)
+    earliest = int(1.0 / deg) if deg > 0 else 10
+    
+    # Optimal pit (before cliff, maximize stint)
+    optimal = cliff - 2
+    
+    # Latest acceptable (at cliff, before rapid deg)
+    latest = cliff
+    
+    print(f"\n{tire_compound} Pit Window:")
+    print(f"  Earliest: Lap {earliest} (min 1.0s tire deg)")
+    print(f"  Optimal:  Lap {optimal} (2 laps before cliff)")
+    print(f"  Latest:   Lap {latest} (at cliff)")
+    print(f"  Window:   {latest - earliest} laps")
+    
+    return {
+        "earliest": earliest,
+        "optimal": optimal,
+        "latest": latest,
+        "window": latest - earliest
+    }
+
+# Calculate windows for each compound
+for compound in ["SOFT", "MEDIUM", "HARD"]:
+    calculate_pit_window(compound, race_laps=50)
+```
+
+</CodeGroup>
+
+---
+
+## Race Result Analysis
+
+### Pit Stop Statistics
+
+After a race simulation, detailed pit stop data is available in results.
+
+**Result Fields:**
+
+<ResponseField name="pit_count" type="int">
+  Total number of pit stops completed
+</ResponseField>
+
+<ResponseField name="pit_laps" type="list">
+  List of lap numbers when pits occurred
+</ResponseField>
+
+<ResponseField name="tires_used" type="list">
+  Chronological list of tire compounds used
+</ResponseField>
+
+**Example Analysis:**
+
+```python
+result = simulate_race(weather="DRY", seed=42)
+
+print("PIT STOP ANALYSIS")
+print("="*60)
+
+# Analyze winner's strategy
+winner = result['results'][0]
+print(f"\nWinner: {winner['name']}")
+print(f"Strategy: {' → '.join(winner['tires_used'])}")
+print(f"Pit stops: {winner['pit_count']} (laps {winner['pit_laps']})")
+
+# Compare strategies
+stop_counts = {}
+for driver in result['results']:
+    stops = driver['pit_count']
+    stop_counts[stops] = stop_counts.get(stops, 0) + 1
+
+print("\nStrategy Distribution:")
+for stops, count in sorted(stop_counts.items()):
+    print(f"  {stops}-stop: {count} drivers")
+
+# Average pit lap
+all_pit_laps = [lap for d in result['results'] for lap in d['pit_laps']]
+avg_pit_lap = sum(all_pit_laps) / len(all_pit_laps) if all_pit_laps else 0
+print(f"\nAverage first pit: Lap {avg_pit_lap:.1f}")
+```
+
+**Output:**
+```
+PIT STOP ANALYSIS
+============================================================
+
+Winner: Max Verstappen
+Strategy: SOFT → MEDIUM
+Pit stops: 1 (laps [18])
+
+Strategy Distribution:
+  0-stop: 2 drivers
+  1-stop: 14 drivers
+  2-stop: 4 drivers
+
+Average first pit: Lap 22.3
+```
+
+---
+
+## Dynamic Strategy Adaptation
+
+### Weather-Based Adaptation
+
+Strategies automatically adapt when weather changes mid-race.
+
+**Source:** `race_engine.py:287-291`
+
+```python
+# Wet weather adaptation
+if current_weather in ["LIGHT_RAIN","HEAVY_RAIN"] and next_cpd in ["SOFT","MEDIUM","HARD"]:
+    next_cpd = "INTER"
+
+# Dry weather adaptation
+elif current_weather == "DRY" and next_cpd == "WET":
+    next_cpd = "MEDIUM"
+```
+
+**Adaptation Rules:**
+
+| Planned Tire | Weather Change | Actual Tire |
+|--------------|----------------|-------------|
+| SOFT/MED/HARD | → LIGHT_RAIN | INTER |
+| SOFT/MED/HARD | → HEAVY_RAIN | INTER |
+| WET | → DRY | MEDIUM |
+| INTER | → DRY | Unchanged* |
+
+*INTER can handle drying conditions for several laps
+
+---
+
+## Strategy Comparison
+
+<Tabs>
+  <Tab title="One-Stop vs Two-Stop">
+    **One-Stop Strategy:**
+    - Single pit stop (~22s penalty)
+    - Longer stints with more degradation
+    - Simpler execution, less risky
+    - Best when tire deg is low
+    
+    **Two-Stop Strategy:**
+    - Two pit stops (~44s penalty)
+    - Shorter stints, fresher tires
+    - More complex, traffic risk
+    - Best when tire deg is high
+    
+    **Typical Time Comparison (50 laps):**
+    - One-stop: Base + 22s + high deg
+    - Two-stop: Base + 44s + low deg
+    - Breakeven depends on deg rate
+  </Tab>
+  
+  <Tab title="Tire Selection">
+    **Starting Tire Impact:**
+    
+    | Start | Pros | Cons | Best Grid Pos |
+    |-------|------|------|---------------|
+    | SOFT | Fastest start, gain positions | Early pit required | P1-P5 |
+    | MEDIUM | Balanced, longer stint | Slower start pace | P6-P12 |
+    | HARD | Long stint, late pit | Very slow start | P13-P20 |
+    
+    Track position > tire advantage for midfield teams.
+  </Tab>
+  
+  <Tab title="Safety Car Impact">
+    **Safety Car Strategy:**
+    
+    - **Timing:** If SC deploys within ±3 laps of planned pit → pit immediately
+    - **Time saved:** ~10s (reduced pit cost vs field)
+    - **Risk:** If pitting too early, may need extra stop
+    - **Advantage:** Can jump cars that already pitted
+    
+    **Historical SC Probability:**
+    - 40% chance per race (based on simulation)
+    - Average deployment: Lap 20-35
+    - Duration: 3-6 laps
+  </Tab>
+</Tabs>
+
+---
+
+## Pit Strategy Optimization Tips
+
+### Undercut vs Overcut
+
+**Undercut (Pit Earlier):**
+- Pit before competitor to gain time on fresh tires
+- Requires ~2-3s lap time advantage with fresh tires
+- Works best when traffic is low
+- Risk: Gives up track position temporarily
+
+**Overcut (Pit Later):**
+- Stay out longer while competitor pits
+- Gain time while running in clean air
+- Can work if your tires hold up
+- Risk: May lose too much time on old tires
+
+### Factors to Consider
+
+1. **Tire Degradation:** Higher deg → earlier pit more beneficial
+2. **Traffic:** Heavy traffic → overcut more attractive
+3. **Safety Car Probability:** High SC chance → delay pit if possible
+4. **Weather Forecast:** Rain expected → delay switching to slicks
+5. **Gap to Competitor:** Large gap → stick to planned strategy
+
+---
+
+## Notes
+
+- Pit stop timing is one of the most critical strategic decisions in F1
+- Real-world pit stops average 2.5-4.0 seconds (not including pit lane time)
+- Optimal strategy depends heavily on circuit characteristics and tire degradation severity
+- **Virtual Safety Car** (VSC) also provides ~6s time saving for pitting
+- Teams run thousands of race simulations to optimize pit strategy
+- Undercuts typically gain 1-2 positions if executed within 3-lap window

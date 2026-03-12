@@ -1,0 +1,516 @@
+---
+title: Race Engine API
+description: Lap-by-lap race simulation engine with tire degradation, pit strategies, and dynamic race events
+---
+
+## Overview
+
+The Race Engine provides a comprehensive lap-by-lap Formula 1 race simulation with realistic tire degradation, pit stop strategies, safety car periods, weather changes, and driver-specific performance characteristics.
+
+## Core Function
+
+### `simulate_race()`
+
+Simulates a complete Formula 1 race with all 20 drivers across 50 laps.
+
+```python
+from race_engine import simulate_race
+
+result = simulate_race(
+    weather="DRY",
+    circuit="STANDARD",
+    seed=42
+)
+```
+
+<ParamField path="weather" type="string" default="DRY">
+  Weather condition for the race
+  
+  **Options:**
+  - `"DRY"` - Normal dry conditions
+  - `"LIGHT_RAIN"` - Light rain (intermediate tires optimal)
+  - `"HEAVY_RAIN"` - Heavy rain (wet tires required)
+  
+  Weather can change dynamically during the race with a 3% chance per lap.
+</ParamField>
+
+<ParamField path="circuit" type="string" default="STANDARD">
+  Circuit type affecting driver performance
+  
+  **Options:**
+  - `"STANDARD"` - Typical balanced circuit
+  - `"STREET"` - Street circuit (Monaco, Singapore)
+  - `"FAST"` - High-speed circuit (Monza, Silverstone)
+  - `"TECHNICAL"` - Technical circuit (Hungary, Spain)
+  - `"DESERT"` - Desert circuit (Bahrain, Abu Dhabi)
+</ParamField>
+
+<ParamField path="seed" type="integer" optional>
+  Random seed for reproducible simulations. If not provided, results will vary on each run.
+</ParamField>
+
+## Response Structure
+
+<ResponseField name="weather" type="string">
+  Initial weather condition
+</ResponseField>
+
+<ResponseField name="circuit" type="string">
+  Circuit type
+</ResponseField>
+
+<ResponseField name="total_laps" type="integer">
+  Total race laps (50)
+</ResponseField>
+
+<ResponseField name="winner" type="string">
+  Full name of race winner
+</ResponseField>
+
+<ResponseField name="podium" type="array">
+  Array of 3 driver names on the podium [P1, P2, P3]
+</ResponseField>
+
+<ResponseField name="dnf_count" type="integer">
+  Number of drivers who did not finish
+</ResponseField>
+
+<ResponseField name="fastest_lap" type="object">
+  <Expandable title="properties">
+    <ResponseField name="driver" type="string">
+      Name of driver with fastest lap
+    </ResponseField>
+    <ResponseField name="time" type="float">
+      Fastest lap time in seconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="results" type="array">
+  Array of driver results (20 drivers)
+  
+  <Expandable title="Driver Result Object">
+    <ResponseField name="position" type="integer">
+      Final race position (1-20)
+    </ResponseField>
+    <ResponseField name="code" type="string">
+      Three-letter driver code (e.g., "VER", "HAM", "LEC")
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Full driver name
+    </ResponseField>
+    <ResponseField name="team" type="string">
+      Team name
+    </ResponseField>
+    <ResponseField name="color" type="string">
+      Team color hex code (e.g., "#3671C6")
+    </ResponseField>
+    <ResponseField name="total_time" type="float">
+      Total race time in seconds
+    </ResponseField>
+    <ResponseField name="gap" type="float">
+      Gap to winner in seconds (0 for winner)
+    </ResponseField>
+    <ResponseField name="pit_count" type="integer">
+      Number of pit stops made
+    </ResponseField>
+    <ResponseField name="pit_laps" type="array">
+      Array of lap numbers when pits occurred
+    </ResponseField>
+    <ResponseField name="tires_used" type="array">
+      Array of tire compounds used (e.g., ["SOFT", "MEDIUM"])
+    </ResponseField>
+    <ResponseField name="fastest_lap" type="float">
+      Driver's fastest lap in seconds (null if DNF)
+    </ResponseField>
+    <ResponseField name="dnf" type="boolean">
+      Whether driver did not finish
+    </ResponseField>
+    <ResponseField name="dnf_lap" type="integer">
+      Lap number of retirement (null if finished)
+    </ResponseField>
+    <ResponseField name="grid_pos" type="integer">
+      Starting grid position
+    </ResponseField>
+    <ResponseField name="positions" type="array">
+      Position at each lap [grid, lap1, lap2, ...]
+    </ResponseField>
+    <ResponseField name="events" type="array">
+      Array of event strings (pit stops, safety car, crashes)
+    </ResponseField>
+    <ResponseField name="laps_led" type="integer">
+      Number of laps led during the race
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="lap_log" type="array">
+  Detailed log for each lap
+  
+  <Expandable title="Lap Entry Object">
+    <ResponseField name="lap" type="integer">
+      Lap number
+    </ResponseField>
+    <ResponseField name="sc" type="boolean">
+      Safety car active
+    </ResponseField>
+    <ResponseField name="vsc" type="boolean">
+      Virtual safety car active
+    </ResponseField>
+    <ResponseField name="weather" type="string">
+      Current weather condition
+    </ResponseField>
+    <ResponseField name="top5" type="array">
+      Top 5 drivers with position, gap, tire, and tire age
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="lap_leaders" type="array">
+  Array of driver codes leading each lap (50 elements)
+</ResponseField>
+
+<ResponseField name="sc_deployments" type="array">
+  Array of lap numbers when safety car was deployed
+</ResponseField>
+
+<ResponseField name="weather_history" type="array">
+  Array of tuples [(lap, weather), ...] showing weather changes
+</ResponseField>
+
+## Example Response
+
+<CodeGroup>
+```json Complete Race Result
+{
+  "weather": "DRY",
+  "circuit": "STANDARD",
+  "total_laps": 50,
+  "winner": "Max Verstappen",
+  "podium": ["Max Verstappen", "Lando Norris", "Charles Leclerc"],
+  "dnf_count": 2,
+  "fastest_lap": {
+    "driver": "Max Verstappen",
+    "time": 82.456
+  },
+  "results": [
+    {
+      "position": 1,
+      "code": "VER",
+      "name": "Max Verstappen",
+      "team": "Red Bull",
+      "color": "#3671C6",
+      "total_time": 4523.789,
+      "gap": 0.0,
+      "pit_count": 2,
+      "pit_laps": [15, 32],
+      "tires_used": ["SOFT", "MEDIUM", "HARD"],
+      "fastest_lap": 82.456,
+      "dnf": false,
+      "dnf_lap": null,
+      "grid_pos": 1,
+      "positions": [1, 1, 1, 1, 1, ...],
+      "events": [
+        "L15: PIT → MEDIUM tires (pit #1)",
+        "L32: PIT → HARD tires (pit #2)"
+      ],
+      "laps_led": 48
+    }
+  ],
+  "lap_log": [
+    {
+      "lap": 1,
+      "sc": false,
+      "vsc": false,
+      "weather": "DRY",
+      "top5": [
+        {
+          "code": "VER",
+          "name": "Max Verstappen",
+          "gap": 0.0,
+          "tire": "SOFT",
+          "tire_age": 1
+        }
+      ]
+    }
+  ],
+  "lap_leaders": ["VER", "VER", "VER", ...],
+  "sc_deployments": [23, 41],
+  "weather_history": [[1, "DRY"], [28, "LIGHT_RAIN"]]
+}
+```
+</CodeGroup>
+
+## CarState Class
+
+Internal class representing each car's state during the race.
+
+### Properties
+
+<ParamField path="code" type="string">
+  Three-letter driver code
+</ParamField>
+
+<ParamField path="name" type="string">
+  Full driver name
+</ParamField>
+
+<ParamField path="team" type="string">
+  Team name
+</ParamField>
+
+<ParamField path="skill" type="float">
+  Driver skill rating (0.80-0.97)
+</ParamField>
+
+<ParamField path="wet_skill" type="float">
+  Wet weather skill rating (0.79-0.98)
+</ParamField>
+
+<ParamField path="tire_mgmt" type="float">
+  Tire management ability (0.76-0.96)
+</ParamField>
+
+<ParamField path="overtake" type="float">
+  Overtaking ability (0.72-0.90)
+</ParamField>
+
+<ParamField path="defend" type="float">
+  Defensive ability (0.70-0.90)
+</ParamField>
+
+<ParamField path="car" type="float">
+  Team car performance (0.80-0.96)
+</ParamField>
+
+<ParamField path="position" type="integer">
+  Current race position
+</ParamField>
+
+<ParamField path="total_time" type="float">
+  Cumulative race time in seconds
+</ParamField>
+
+<ParamField path="tire" type="string">
+  Current tire compound
+</ParamField>
+
+<ParamField path="tire_age" type="integer">
+  Laps on current tires
+</ParamField>
+
+## Data References
+
+### DRIVERS Dictionary
+
+All 20 drivers for 2026 season with performance attributes:
+
+```python
+DRIVERS = {
+    "VER": {
+        "name": "Max Verstappen",
+        "team": "Red Bull",
+        "skill": 0.970,
+        "wet": 0.960,
+        "tire_mgmt": 0.92,
+        "overtake": 0.88,
+        "defend": 0.90,
+        "color": "#3671C6"
+    },
+    "LAW": {"name": "Liam Lawson", "team": "Red Bull", "skill": 0.840, ...},
+    "LEC": {"name": "Charles Leclerc", "team": "Ferrari", "skill": 0.940, ...},
+    "HAM": {"name": "Lewis Hamilton", "team": "Ferrari", "skill": 0.945, ...},
+    "NOR": {"name": "Lando Norris", "team": "McLaren", "skill": 0.935, ...},
+    "PIA": {"name": "Oscar Piastri", "team": "McLaren", "skill": 0.905, ...},
+    "RUS": {"name": "George Russell", "team": "Mercedes", "skill": 0.900, ...},
+    "ANT": {"name": "Kimi Antonelli", "team": "Mercedes", "skill": 0.840, ...},
+    "ALO": {"name": "Fernando Alonso", "team": "Aston Martin", "skill": 0.920, ...},
+    "STR": {"name": "Lance Stroll", "team": "Aston Martin", "skill": 0.810, ...},
+    "GAS": {"name": "Pierre Gasly", "team": "Alpine", "skill": 0.840, ...},
+    "DOO": {"name": "Jack Doohan", "team": "Alpine", "skill": 0.800, ...},
+    "SAI": {"name": "Carlos Sainz", "team": "Williams", "skill": 0.900, ...},
+    "ALB": {"name": "Alexander Albon", "team": "Williams", "skill": 0.830, ...},
+    "OCO": {"name": "Esteban Ocon", "team": "Haas", "skill": 0.840, ...},
+    "BEA": {"name": "Oliver Bearman", "team": "Haas", "skill": 0.810, ...},
+    "TSU": {"name": "Yuki Tsunoda", "team": "Racing Bulls", "skill": 0.845, ...},
+    "HAD": {"name": "Isack Hadjar", "team": "Racing Bulls", "skill": 0.800, ...},
+    "HUL": {"name": "Nico Hulkenberg", "team": "Sauber", "skill": 0.840, ...},
+    "BOR": {"name": "Gabriel Bortoleto", "team": "Sauber", "skill": 0.800, ...}
+}
+```
+
+### TEAM_CAR Performance
+
+Team car performance multipliers:
+
+```python
+TEAM_CAR = {
+    "Red Bull":     0.960,
+    "Ferrari":      0.955,
+    "McLaren":      0.958,
+    "Mercedes":     0.920,
+    "Aston Martin": 0.860,
+    "Williams":     0.840,
+    "Alpine":       0.820,
+    "Haas":         0.815,
+    "Racing Bulls": 0.825,
+    "Sauber":       0.800
+}
+```
+
+### STRATEGIES
+
+Available pit stop strategies:
+
+```python
+STRATEGIES = {
+    "S-M": {
+        "start": "SOFT",
+        "pits": [18],
+        "compounds": ["SOFT", "MEDIUM"]
+    },
+    "M-H": {
+        "start": "MEDIUM",
+        "pits": [26],
+        "compounds": ["MEDIUM", "HARD"]
+    },
+    "H-M": {
+        "start": "HARD",
+        "pits": [34],
+        "compounds": ["HARD", "MEDIUM"]
+    },
+    "S-M-H": {
+        "start": "SOFT",
+        "pits": [15, 32],
+        "compounds": ["SOFT", "MEDIUM", "HARD"]
+    },
+    "M-M": {
+        "start": "MEDIUM",
+        "pits": [28],
+        "compounds": ["MEDIUM", "MEDIUM"]
+    }
+}
+```
+
+## Race Constants
+
+<ParamField path="RACE_LAPS" type="integer" default="50">
+  Total laps in a race
+</ParamField>
+
+<ParamField path="PIT_LOSS" type="float" default="22.0">
+  Time lost in pit lane (seconds)
+</ParamField>
+
+<ParamField path="TIRE_PACE" type="object">
+  Base lap time offset for each compound (seconds)
+  ```python
+  {
+      "SOFT":   0.0,
+      "MEDIUM": 0.4,
+      "HARD":   0.8,
+      "INTER":  1.5,
+      "WET":    3.0
+  }
+  ```
+</ParamField>
+
+<ParamField path="TIRE_DEG" type="object">
+  Degradation per lap for each compound (seconds)
+  ```python
+  {
+      "SOFT":   0.085,
+      "MEDIUM": 0.050,
+      "HARD":   0.028,
+      "INTER":  0.060,
+      "WET":    0.035
+  }
+  ```
+</ParamField>
+
+<ParamField path="TIRE_CLIFF" type="object">
+  Lap number when degradation accelerates
+  ```python
+  {
+      "SOFT":   18,
+      "MEDIUM": 28,
+      "HARD":   40,
+      "INTER":  22,
+      "WET":    30
+  }
+  ```
+</ParamField>
+
+## Race Events
+
+### Safety Car
+- **Trigger Probability:** 4% per lap
+- **Duration:** 3-6 laps
+- **Effect:** Slows all cars to minimum 115s lap time
+- **Strategic Impact:** Teams often pit during safety car periods
+
+### Virtual Safety Car
+- **Trigger Probability:** 2% per lap (only when SC not active)
+- **Effect:** Moderate pace reduction
+
+### DNF (Did Not Finish)
+- **Probability:** 0.6% per driver per lap
+- **Causes:** Mechanical failure or crash
+- **Effect:** Driver retires from race
+
+### Weather Changes
+- **Trigger:** 3% chance per lap after lap 5
+- **DRY → LIGHT_RAIN:** Forces tire changes to intermediates
+- **LIGHT_RAIN → HEAVY_RAIN or DRY:** Strategic tire decisions
+- **Wet Penalty:** +3s on slicks in light rain, +8s in heavy rain
+
+## Usage Examples
+
+<CodeGroup>
+```python Dry Race
+result = simulate_race(
+    weather="DRY",
+    circuit="STANDARD",
+    seed=42
+)
+
+print(f"Winner: {result['winner']}")
+print(f"Podium: {', '.join(result['podium'])}")
+print(f"DNFs: {result['dnf_count']}")
+```
+
+```python Wet Race at Monaco
+result = simulate_race(
+    weather="HEAVY_RAIN",
+    circuit="STREET",
+    seed=100
+)
+
+# Hamilton's wet weather skill gives him an advantage
+for driver in result['results'][:5]:
+    print(f"P{driver['position']}: {driver['name']} ({driver['team']})")
+```
+
+```python Multiple Simulations
+import statistics
+
+winners = []
+for i in range(100):
+    result = simulate_race(
+        weather="DRY",
+        circuit="FAST",
+        seed=i
+    )
+    winners.append(result['results'][0]['code'])
+
+win_counts = {code: winners.count(code) for code in set(winners)}
+print(f"VER wins: {win_counts.get('VER', 0)}%")
+```
+</CodeGroup>
+
+## Performance Notes
+
+- Average simulation time: **~0.5-1.0 seconds** per race
+- Deterministic when seed is provided
+- All 50 laps simulated with full physics
+- Output JSON size: ~50-100KB per race

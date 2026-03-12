@@ -1,0 +1,116 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Formula 1 ML Prediction System",
+  "projectDescription": "AI-powered Formula 1 race prediction system using machine learning models for winner prediction, tire degradation analysis, and pit stop strategy optimization.",
+  "theme": "aspen",
+  "primaryColor": "#E10600",
+  "lightColor": "#FF1E00",
+  "darkColor": "#C10500",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/data-collection",
+              "concepts/feature-engineering",
+              "concepts/models"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/training-models",
+              "guides/making-predictions",
+              "guides/tire-strategy",
+              "guides/race-simulation",
+              "guides/web-dashboard"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Machine Learning",
+            "pages": [
+              "api/winner-predictor",
+              "api/tire-degradation",
+              "api/pit-optimizer"
+            ]
+          },
+          {
+            "group": "Data Processing",
+            "pages": [
+              "api/data-collector",
+              "api/feature-engineering"
+            ]
+          },
+          {
+            "group": "Simulation",
+            "pages": [
+              "api/race-engine",
+              "api/season-predictor"
+            ]
+          },
+          {
+            "group": "Web API",
+            "pages": [
+              "api/flask-endpoints",
+              "api/response-formats"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Additional Resources",
+            "pages": [
+              "resources/model-performance",
+              "resources/datasets",
+              "resources/roadmap",
+              "resources/troubleshooting"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Race winner prediction with Random Forest and XGBoost ensemble (85%+ accuracy)",
+    "Tire degradation modeling by compound with lap-by-lap analysis",
+    "Pit stop strategy optimizer with optimal timing recommendations",
+    "Lap-by-lap race simulation engine with weather and safety car modeling",
+    "Interactive web dashboard with real-time predictions and visualizations",
+    "Weather impact analysis for dry, light rain, and heavy rain conditions",
+    "Driver comparison and head-to-head statistics",
+    "2026 season championship forecasting"
+  ],
+  "publicApiSurface": [
+    "WinnerPredictor.train() - Train race winner prediction models",
+    "WinnerPredictor.predict_race() - Predict race outcomes",
+    "simulate_race() - Run full lap-by-lap race simulation",
+    "F1DataCollector.collect_data() - Collect historical F1 data",
+    "FeatureEngineering.create_features() - Generate ML features",
+    "/api/predict_v2 - REST endpoint for winner predictions",
+    "/api/tire_strategy - REST endpoint for tire strategy optimization",
+    "/api/lap_race - REST endpoint for race simulation",
+    "/api/season_2026 - REST endpoint for 2026 season predictions",
+    "/api/compare - REST endpoint for driver comparison",
+    "/api/feature_importance - REST endpoint for model insights"
+  ]
+}

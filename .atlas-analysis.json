@@ -101,16 +101,19 @@
     "2026 season championship forecasting"
   ],
   "publicApiSurface": [
-    "WinnerPredictor.train() - Train race winner prediction models",
+    "WinnerPredictor class - ML-based race winner prediction",
+    "WinnerPredictor.load_data() - Load race features",
+    "WinnerPredictor.train_random_forest() - Train RF model",
+    "WinnerPredictor.train_xgboost() - Train XGBoost model",
     "WinnerPredictor.predict_race() - Predict race outcomes",
     "simulate_race() - Run full lap-by-lap race simulation",
-    "F1DataCollector.collect_data() - Collect historical F1 data",
-    "FeatureEngineering.create_features() - Generate ML features",
+    "CarState class - Individual car state tracking",
     "/api/predict_v2 - REST endpoint for winner predictions",
-    "/api/tire_strategy - REST endpoint for tire strategy optimization",
     "/api/lap_race - REST endpoint for race simulation",
     "/api/season_2026 - REST endpoint for 2026 season predictions",
     "/api/compare - REST endpoint for driver comparison",
-    "/api/feature_importance - REST endpoint for model insights"
+    "/api/feature_importance - REST endpoint for model insights",
+    "/api/simulate_race - REST endpoint for basic race simulation",
+    "/api/simulate_championship - REST endpoint for championship simulation"
   ]
 }
